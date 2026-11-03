@@ -1,6 +1,6 @@
 //! The hosted server's HTTP surface: health, the OAuth endpoints and `/mcp`.
 
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -200,8 +200,21 @@ impl Hosted {
     }
 }
 
-/// The caller's IP: the configured header when set, else the socket's peer, else `unknown`.
+/// The caller's rate-limit key: the IP from the configured header when set, else the socket's
+/// peer, else `unknown`; see [`limit_key`].
 pub struct ClientIp(pub String);
+
+/// An IPv4 address as is, an IPv6 address by its /64, the block one client is usually handed,
+/// so rotating addresses inside it does not reset the limits. IPv4-mapped IPv6 counts as IPv4.
+fn limit_key(ip: IpAddr) -> String {
+    match ip.to_canonical() {
+        IpAddr::V6(v6) => {
+            let s = v6.segments();
+            format!("{:x}:{:x}:{:x}:{:x}::/64", s[0], s[1], s[2], s[3])
+        }
+        IpAddr::V4(v4) => v4.to_string(),
+    }
+}
 
 impl FromRequestParts<Arc<Hosted>> for ClientIp {
     type Rejection = std::convert::Infallible;
@@ -217,16 +230,15 @@ impl FromRequestParts<Arc<Hosted>> for ClientIp {
             .and_then(|name| parts.headers.get(name))
             .and_then(|v| v.to_str().ok())
             .map(str::trim)
-            .and_then(|v| v.parse::<std::net::IpAddr>().ok())
-            .map(|ip| ip.to_string());
+            .and_then(|v| v.parse::<IpAddr>().ok());
         let from_socket = parts
             .extensions
             .get::<ConnectInfo<SocketAddr>>()
-            .map(|c| c.0.ip().to_string());
+            .map(|c| c.0.ip());
         Ok(Self(
             from_header
                 .or(from_socket)
-                .unwrap_or_else(|| "unknown".into()),
+                .map_or_else(|| "unknown".into(), limit_key),
         ))
     }
 }
@@ -390,6 +402,16 @@ pub async fn serve_from_env() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ipv6_is_limited_per_64_and_mapped_ipv4_as_ipv4() {
+        let key = |s: &str| limit_key(s.parse().unwrap());
+        assert_eq!(key("203.0.113.7"), "203.0.113.7");
+        assert_eq!(key("::ffff:203.0.113.7"), "203.0.113.7");
+        assert_eq!(key("2001:db8:1:2::1"), "2001:db8:1:2::/64");
+        assert_eq!(key("2001:db8:1:2:ffff::9"), key("2001:db8:1:2::1"));
+        assert_ne!(key("2001:db8:1:3::1"), key("2001:db8:1:2::1"));
+    }
 
     #[test]
     fn config_is_validated() {

@@ -56,9 +56,11 @@ impl Fetcher {
     ) -> Result<Response> {
         let safe_url = redact(url);
         let mut attempt = 0;
+        // What to wait before the next attempt: the doubling backoff, or the server's own ask.
+        let mut pause = None;
         loop {
-            if attempt > 0 {
-                tokio::time::sleep(self.options.backoff * 2u32.pow(attempt - 1)).await;
+            if let Some(wait) = pause.take() {
+                tokio::time::sleep(wait).await;
             }
             let can_retry = retry && attempt < self.options.retries;
             let sent = self
@@ -73,6 +75,7 @@ impl Fetcher {
                 Ok(res) => res,
                 Err(source) if can_retry => {
                     tracing::debug!(url = %safe_url, attempt, "retrying after transport error: {source}");
+                    pause = Some(self.options.backoff * 2u32.pow(attempt));
                     attempt += 1;
                     continue;
                 }
@@ -90,6 +93,7 @@ impl Fetcher {
             }
             if can_retry && RETRY_STATUSES.contains(&status.as_u16()) {
                 tracing::debug!(url = %safe_url, attempt, status = status.as_u16(), "retrying");
+                pause = Some(self.options.backoff * 2u32.pow(attempt));
                 attempt += 1;
                 continue;
             }
@@ -99,7 +103,7 @@ impl Fetcher {
                 && wait <= MAX_RETRY_AFTER
             {
                 tracing::debug!(url = %safe_url, attempt, wait_s = wait.as_secs(), "rate limited, waiting");
-                tokio::time::sleep(wait).await;
+                pause = Some(wait);
                 attempt += 1;
                 continue;
             }

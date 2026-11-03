@@ -455,6 +455,22 @@ async fn a_rate_limit_with_a_short_retry_after_is_waited_out() {
         }
     ));
     assert_eq!(server.received_requests().await.unwrap().len(), 1);
+
+    let server = MockServer::start().await;
+    Mock::given(path(MOVERGY))
+        .respond_with(ResponseTemplate::new(429))
+        .mount(&server)
+        .await;
+    let tg = builder(&server).build();
+    tg.set_session(session("tok-1"));
+    assert!(matches!(
+        tg.get_movergy().await.unwrap_err(),
+        Error::RateLimit {
+            retry_after: None,
+            ..
+        }
+    ));
+    assert_eq!(server.received_requests().await.unwrap().len(), 1);
 }
 
 #[tokio::test]

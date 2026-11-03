@@ -290,15 +290,30 @@ impl TechnogymMcp {
     ) -> Result<CallToolResult, McpError> {
         self.run(|api| async move {
             let id = required(args.analytics_id.as_ref(), "analytics_id")?;
-            let segment_by: SegmentBy = args.segment_by.as_deref().unwrap_or("auto").parse().map_err(ToolError::Input)?;
-            let step = usize::try_from(args.sample_every_seconds.unwrap_or(10)).unwrap_or(1).max(1);
+            let segment_by: SegmentBy = args
+                .segment_by
+                .as_deref()
+                .unwrap_or("auto")
+                .parse()
+                .map_err(ToolError::Input)?;
+            let step = usize::try_from(args.sample_every_seconds.unwrap_or(10))
+                .unwrap_or(1)
+                .max(1);
             let from_sec = args.from_sec.unwrap_or(0);
             let to_sec = args.to_sec.unwrap_or(0);
 
             let mut raw = api.get_exercise_analytics_raw(id).await?;
             let analytics = parse_exercise_analytics(&raw, id);
-            let options = SegmentOptions { segment_by, segment_seconds: args.segment_seconds };
-            let (mode, segments) = segment_analytics(&analytics.samples, &analytics.channels, &analytics.laps, options);
+            let options = SegmentOptions {
+                segment_by,
+                segment_seconds: args.segment_seconds,
+            };
+            let (mode, segments) = segment_analytics(
+                &analytics.samples,
+                &analytics.channels,
+                &analytics.laps,
+                options,
+            );
             let stats = channel_stats(&analytics.samples, &analytics.channels);
             let samples = downsample(&window_samples(&analytics.samples, from_sec, to_sec), step);
             let hr = downsample(&window_samples(&analytics.hr, from_sec, to_sec), step);
@@ -312,11 +327,17 @@ impl TechnogymMcp {
             value["samples"] = json!(samples);
             value["hr"] = json!(hr);
             if from_sec != 0 || to_sec != 0 {
-                value["window"] = json!({ "fromSec": from_sec, "toSec": if to_sec == 0 { Value::Null } else { json!(to_sec) } });
+                let to = if to_sec == 0 {
+                    Value::Null
+                } else {
+                    json!(to_sec)
+                };
+                value["window"] = json!({ "fromSec": from_sec, "toSec": to });
             }
             if args.include_raw.unwrap_or(false) {
                 if let Some(count) = raw["analitics"]["samples"].as_array().map(Vec::len) {
-                    raw["analitics"]["samples"] = json!(format!("<{count} samples omitted; see samples>"));
+                    raw["analitics"]["samples"] =
+                        json!(format!("<{count} samples omitted; see samples>"));
                 }
                 value["raw"] = raw;
             }

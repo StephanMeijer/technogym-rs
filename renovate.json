@@ -13,6 +13,13 @@
   },
   "packageRules": [
     {
+      "description": "The RustCrypto crates move majors together and share trait paths; one PR compiles, six do not.",
+      "matchManagers": ["cargo"],
+      "matchPackageNames": ["aes-gcm", "hmac", "sha2", "aead", "digest"],
+      "matchUpdateTypes": ["major"],
+      "groupName": "rustcrypto"
+    },
+    {
       "description": "Base-image digest bumps are unscheduled: the Dockerfile pins by digest and only a new digest takes a security fix.",
       "matchManagers": ["dockerfile"],
       "matchUpdateTypes": ["digest", "pinDigest"],

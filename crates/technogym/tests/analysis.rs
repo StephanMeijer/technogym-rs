@@ -5,9 +5,10 @@
 use std::collections::BTreeMap;
 
 use technogym::{
-    AnalyticsSample, ExerciseAnalytics, HrSample, Lap, SegmentBy, SegmentChannel, SegmentMode,
-    SegmentOptions, add_heart_rate, channel_stats, downsample, hr_stats, sample_every,
-    segment_analytics, window_samples,
+    AnalyticsSample, ExerciseAnalytics, GradeBands, HrSample, Lap, SegmentBy, SegmentChannel,
+    SegmentMode, SegmentOptions, acsm_vo2, add_heart_rate, channel_stats, downsample,
+    exercise_elevation_gain, grade_bands, hr_stats, sample_every, segment_analytics,
+    window_samples,
 };
 
 fn sample(t: i64, speed: f64, grade: f64, dist: f64) -> AnalyticsSample {
@@ -306,4 +307,78 @@ fn heart_rate_holds_at_most_five_seconds_and_reports_coverage() {
     assert_eq!(whole.max, 150);
     assert_eq!(segments[0].hr.as_ref().unwrap().max, 100);
     assert_eq!(segments[1].hr.as_ref().unwrap().min, 150);
+}
+
+#[test]
+fn acsm_oxygen_cost_walks_below_8_kmh_and_runs_from_there() {
+    // 5 km/h = 83.3 m/min: 3.5 + 8.33 + 1.8 * 83.3 * 0.10 = 26.8.
+    assert_eq!(acsm_vo2(5.0, 10.0), 26.8);
+    // 10 km/h = 166.7 m/min on the flat: 3.5 + 0.2 * 166.7 = 36.8.
+    assert_eq!(acsm_vo2(10.0, 0.0), 36.8);
+}
+
+#[test]
+fn elevation_comes_from_speed_and_grade_or_from_vdistance() {
+    // 1 m/s at 10 % for 100 s climbs 10 m; the flat second after it adds nothing.
+    let samples = vec![sample(1, 3.6, 10.0, 1.0), sample(101, 3.6, 0.0, 101.0)];
+    assert_eq!(exercise_elevation_gain(&samples), Some(10.0));
+
+    let with_vdistance: Vec<_> = [(1, 0.0), (50, 7.0), (100, 12.0)]
+        .into_iter()
+        .map(|(t, v)| AnalyticsSample {
+            t,
+            channels: BTreeMap::from([("VDistance".into(), Some(v))]),
+        })
+        .collect();
+    assert_eq!(exercise_elevation_gain(&with_vdistance), Some(12.0));
+    assert_eq!(exercise_elevation_gain(&[]), None);
+}
+
+#[test]
+fn grade_bands_count_moving_seconds_and_flat_grade_counts_in_the_average() {
+    let samples = vec![
+        sample(1, 5.0, 2.0, 0.0),
+        sample(61, 5.0, 7.0, 83.0),
+        sample(91, 5.0, 12.0, 125.0),
+        sample(111, 0.0, 12.0, 153.0),
+        sample(121, 0.0, 0.0, 153.0),
+    ];
+    assert_eq!(
+        grade_bands(&samples),
+        Some(GradeBands {
+            below_5: 60,
+            from_5_to_10: 30,
+            from_10: 20,
+        }),
+        "the 11 stopped seconds count nowhere"
+    );
+
+    let flat_then_hill = vec![
+        sample(1, 5.0, 0.0, 0.0),
+        sample(51, 5.0, 10.0, 70.0),
+        sample(100, 5.0, 10.0, 139.0),
+    ];
+    assert_eq!(
+        channel_stats(&flat_then_hill, &channels())["Grade"].avg,
+        Some(5.0),
+        "50 s at 0 % and 50 s at 10 %: a flat belt is a reading"
+    );
+}
+
+#[test]
+fn segments_carry_oxygen_cost_and_heart_rate_per_unit_of_it() {
+    let analytics = ExerciseAnalytics {
+        samples: vec![sample(1, 5.0, 10.0, 1.4), sample(60, 5.0, 10.0, 83.3)],
+        hr: sparse(&(1..=60).map(|t| (t, 134)).collect::<Vec<_>>()),
+        ..ExerciseAnalytics::default()
+    };
+    let (_, mut segments) = segment_analytics(
+        &analytics.samples,
+        &channels(),
+        &[],
+        SegmentOptions::default(),
+    );
+    add_heart_rate(&analytics, &mut segments);
+    assert_eq!(segments[0].acsm_vo2, Some(26.8));
+    assert_eq!(segments[0].hr_per_vo2, Some(5.0), "134 / 26.8");
 }

@@ -134,6 +134,7 @@ pub struct TechnogymBuilder {
     credentials: Option<Credentials>,
     facility: Option<String>,
     transport: TransportOptions,
+    http: Option<reqwest::Client>,
     core_url: String,
     services_url: String,
 }
@@ -145,6 +146,7 @@ impl Default for TechnogymBuilder {
             credentials: None,
             facility: None,
             transport: TransportOptions::default(),
+            http: None,
             core_url: CORE_URL.to_string(),
             services_url: SERVICES_URL.to_string(),
         }
@@ -179,6 +181,13 @@ impl TechnogymBuilder {
         self
     }
 
+    /// The HTTP client requests go through, so that many `Technogym`s share one connection pool.
+    /// Default: a fresh [`reqwest::Client`].
+    pub fn http_client(mut self, client: reqwest::Client) -> Self {
+        self.http = Some(client);
+        self
+    }
+
     /// The login host, for tests and proxies. Default [`CORE_URL`].
     pub fn core_url(mut self, url: impl Into<String>) -> Self {
         self.core_url = url.into();
@@ -197,7 +206,7 @@ impl TechnogymBuilder {
             store: self
                 .store
                 .unwrap_or_else(|| Box::new(MemorySessionStore::default())),
-            fetcher: Fetcher::new(self.transport),
+            fetcher: Fetcher::new(self.http.unwrap_or_default(), self.transport),
             facility: self.facility,
             core_url: self.core_url.trim_end_matches('/').to_string(),
             services_url: self.services_url.trim_end_matches('/').to_string(),

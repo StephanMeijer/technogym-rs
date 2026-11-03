@@ -23,6 +23,7 @@ dist = true
 [dependencies]
 technogym.workspace = true
 async-trait.workspace = true
+reqwest.workspace = true
 rmcp.workspace = true
 schemars.workspace = true
 serde.workspace = true

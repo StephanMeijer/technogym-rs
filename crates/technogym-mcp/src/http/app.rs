@@ -21,7 +21,7 @@ use url::Url;
 use super::limit::RateLimit;
 use super::oauth;
 use super::seal::Sealer;
-use crate::source::FixedSource;
+use crate::source::{BaseUrls, FixedSource};
 use crate::tools::TechnogymMcp;
 
 /// Settings of the hosted server, from the environment.
@@ -134,7 +134,7 @@ pub struct Hosted {
     pub cancel: CancellationToken,
     /// One connection pool for every mywellness call this process makes.
     http: reqwest::Client,
-    base_urls: Option<(String, String)>,
+    base_urls: Option<BaseUrls>,
 }
 
 impl Hosted {
@@ -157,7 +157,7 @@ impl Hosted {
         core_url: impl Into<String>,
         services_url: impl Into<String>,
     ) -> Self {
-        self.base_urls = Some((core_url.into(), services_url.into()));
+        self.base_urls = Some(BaseUrls::new(core_url, services_url));
         self
     }
 
@@ -171,7 +171,7 @@ impl Hosted {
     pub fn client(&self) -> TechnogymBuilder {
         let b = Technogym::builder().http_client(self.http.clone());
         match &self.base_urls {
-            Some((core, services)) => b.core_url(core.clone()).services_url(services.clone()),
+            Some(urls) => urls.apply(b),
             None => b,
         }
     }

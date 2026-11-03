@@ -175,11 +175,8 @@ pub async fn register(
             "unsupported token_endpoint_auth_method",
         );
     }
-    let client_secret = (method != "none").then(|| {
-        let mut bytes = [0u8; 32];
-        rand::RngCore::fill_bytes(&mut rand::rng(), &mut bytes);
-        URL_SAFE_NO_PAD.encode(bytes)
-    });
+    let client_secret =
+        (method != "none").then(|| URL_SAFE_NO_PAD.encode(rand::random::<[u8; 32]>()));
     let record = ClientRecord {
         redirect_uris,
         client_name: client

@@ -13,7 +13,6 @@ use aes_gcm::{Aes256Gcm, Nonce};
 use base64::Engine as _;
 use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use hmac::{Hmac, Mac as _};
-use rand::RngCore as _;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use sha2::Sha256;
@@ -142,8 +141,7 @@ impl Sealer {
             e: ttl_seconds.map(|t| (self.clock)() + t),
         };
         let plain = serde_json::to_vec(&body).expect("serialisable");
-        let mut nonce = [0u8; NONCE];
-        rand::rng().fill_bytes(&mut nonce);
+        let nonce: [u8; NONCE] = rand::random();
         let cipher = Aes256Gcm::new((&self.keys[0]).into());
         let sealed = cipher
             .encrypt(

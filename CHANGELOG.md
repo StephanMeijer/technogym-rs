@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1](https://github.com/StephanMeijer/technogym-rs/compare/v0.1.0...v0.1.1) - 2026-11-03
+
+### Fixed
+
+- *(mcp)* rate-limit ipv6 clients per /64 instead of per address
+
 ## [0.1.0](https://github.com/StephanMeijer/technogym-rs/releases/tag/v0.1.0) - 2026-11-03
 
 ### Added

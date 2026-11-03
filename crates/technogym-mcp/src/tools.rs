@@ -1,8 +1,9 @@
-//! The six read-only tools.
+//! The seven read-only tools.
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use chrono::NaiveDate;
+use chrono::{Datelike as _, NaiveDate};
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{CallToolResult, Implementation, ServerCapabilities, ServerConfig};
 use rmcp::{ErrorData as McpError, ServerHandler, schemars, tool, tool_handler, tool_router};
@@ -11,8 +12,9 @@ use serde_json::{Value, json};
 use technogym::dates::{add_days, parse_iso, to_iso, today};
 use technogym::parse::{parse_exercise_analytics, parse_workout_session};
 use technogym::{
-    SegmentBy, SegmentOptions, Technogym, add_heart_rate, channel_stats, downsample,
-    exercise_elevation_gain, grade_bands, sample_every, segment_analytics, window_samples,
+    SegmentBy, SegmentOptions, SessionSummary, Technogym, add_heart_rate, channel_stats,
+    downsample, exercise_elevation_gain, grade_bands, sample_every, segment_analytics,
+    window_samples,
 };
 
 use crate::results::{MAX_RESULT_CHARS, compact_json, error_result, json_result, text_result};
@@ -78,6 +80,46 @@ pub struct WorkoutSessionsArgs {
     /// Only gym-floor workout sessions (default true). false includes classes, outdoor, ...
     #[serde(default)]
     pub only_workouts: Option<bool>,
+}
+
+/// `get_training_trends` arguments.
+#[derive(Debug, Default, Deserialize, schemars::JsonSchema)]
+pub struct TrainingTrendsArgs {
+    /// Start date, YYYY-MM-DD (default: 12 weeks before to_date).
+    #[serde(default)]
+    pub from_date: Option<String>,
+    /// End date, YYYY-MM-DD (default: today).
+    #[serde(default)]
+    pub to_date: Option<String>,
+}
+
+/// Sessions per ISO week, oldest first: count, minutes, calories and MOVEs. A week without
+/// sessions is left out.
+pub fn weekly_totals(sessions: &[SessionSummary]) -> Vec<Value> {
+    let mut weeks: BTreeMap<(i32, u32), [i64; 4]> = BTreeMap::new();
+    for s in sessions {
+        let Ok(day) = parse_iso(&s.date) else {
+            continue;
+        };
+        let week = day.iso_week();
+        let w = weeks.entry((week.year(), week.week())).or_default();
+        w[0] += 1;
+        w[1] += s.duration_min.unwrap_or(0);
+        w[2] += s.calories.unwrap_or(0);
+        w[3] += s.moves.unwrap_or(0);
+    }
+    weeks
+        .into_iter()
+        .map(|((year, week), [sessions, minutes, calories, moves])| {
+            json!({
+                "week": format!("{year}-W{week:02}"),
+                "sessions": sessions,
+                "minutes": minutes,
+                "calories": calories,
+                "moves": moves,
+            })
+        })
+        .collect()
 }
 
 /// `get_workout_session` arguments.
@@ -226,6 +268,33 @@ impl TechnogymMcp {
             } else {
                 json_result(&sessions, DATE_RANGE_HINT)
             })
+        })
+        .await
+    }
+
+    #[tool(
+        name = "get_training_trends",
+        description = "Training volume per ISO week, oldest first: sessions, minutes, calories and MOVEs, from all activity types (gym floor, classes, outdoor). For trends over weeks or months; one request whatever the range. Weeks without sessions are left out. The current Movergy score is in get_account_info.",
+        annotations(
+            title = "Training trends",
+            read_only_hint = true,
+            open_world_hint = true
+        )
+    )]
+    async fn get_training_trends(
+        &self,
+        Parameters(args): Parameters<TrainingTrendsArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        self.run(|api| async move {
+            let to = date(args.to_date.as_ref())?.unwrap_or_else(today);
+            let from = date(args.from_date.as_ref())?.unwrap_or_else(|| add_days(to, -83));
+            let sessions = api.list_sessions(from, to, false).await?;
+            let value = json!({
+                "fromDate": to_iso(from),
+                "toDate": to_iso(to),
+                "weeks": weekly_totals(&sessions),
+            });
+            Ok(json_result(&value, DATE_RANGE_HINT))
         })
         .await
     }
@@ -444,8 +513,35 @@ impl ServerHandler for TechnogymMcp {
 mod tests {
     use super::*;
 
+    fn summary(date: &str, minutes: i64, moves: i64) -> SessionSummary {
+        SessionSummary {
+            date: date.into(),
+            duration_min: Some(minutes),
+            moves: Some(moves),
+            ..SessionSummary::default()
+        }
+    }
+
     #[test]
-    fn six_read_only_tools_are_listed() {
+    fn weekly_totals_group_by_iso_week_oldest_first() {
+        // 2026-09-06 is a Sunday: it belongs to the week of Monday 2026-08-31.
+        let weeks = weekly_totals(&[
+            summary("2026-09-08", 45, 300),
+            summary("2026-09-06", 30, 200),
+            summary("2026-08-31", 20, 100),
+            summary("not a date", 99, 99),
+        ]);
+        assert_eq!(weeks.len(), 2);
+        assert_eq!(weeks[0]["week"], "2026-W36");
+        assert_eq!(weeks[0]["sessions"], 2);
+        assert_eq!(weeks[0]["minutes"], 50);
+        assert_eq!(weeks[0]["moves"], 300);
+        assert_eq!(weeks[1]["week"], "2026-W37");
+        assert_eq!(weeks[1]["calories"], 0, "missing figures count as 0");
+    }
+
+    #[test]
+    fn seven_read_only_tools_are_listed() {
         let mut names: Vec<String> = TechnogymMcp::tool_router()
             .list_all()
             .into_iter()
@@ -459,6 +555,7 @@ mod tests {
                 "get_exercise_analytics",
                 "get_recent_workouts",
                 "get_session_heart_rate",
+                "get_training_trends",
                 "get_workout_session",
                 "get_workout_sessions",
             ]

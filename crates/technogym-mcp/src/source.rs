@@ -35,6 +35,8 @@ pub struct FileSource {
     facility: Option<String>,
     base_urls: Option<(String, String)>,
     current: tokio::sync::Mutex<Option<Arc<Technogym>>>,
+    /// Set by `reset`, honoured by the next `get`: never lost to a lock held by another call.
+    stale: AtomicBool,
     attempted: AtomicBool,
     failure: std::sync::Mutex<Option<String>>,
 }
@@ -52,6 +54,7 @@ impl FileSource {
             facility,
             base_urls: None,
             current: tokio::sync::Mutex::new(None),
+            stale: AtomicBool::new(false),
             attempted: AtomicBool::new(false),
             failure: std::sync::Mutex::new(None),
         }
@@ -119,6 +122,9 @@ impl FileSource {
 impl ApiSource for FileSource {
     async fn get(&self) -> technogym::Result<Arc<Technogym>> {
         let mut current = self.current.lock().await;
+        if self.stale.swap(false, Ordering::SeqCst) {
+            *current = None;
+        }
         if let Some(api) = &*current {
             return Ok(api.clone());
         }
@@ -129,9 +135,7 @@ impl ApiSource for FileSource {
     }
 
     fn reset(&self) {
-        if let Ok(mut current) = self.current.try_lock() {
-            *current = None;
-        }
+        self.stale.store(true, Ordering::SeqCst);
     }
 
     fn login_hint(&self) -> &'static str {

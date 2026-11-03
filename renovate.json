@@ -1,6 +1,12 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["config:recommended", ":semanticCommits", "group:allNonMajor", "schedule:weekly"],
+  "extends": [
+    "config:recommended",
+    ":semanticCommits",
+    "group:allNonMajor",
+    "schedule:weekly",
+    "docker:pinDigests"
+  ],
   "vulnerabilityAlerts": {
     "description": "A dependency with a known advisory does not wait for the weekly window.",
     "schedule": ["at any time"],

@@ -41,8 +41,8 @@ mod transport;
 
 pub use analysis::{
     CUMULATIVE_CHANNELS, ChannelStats, CumulativeDelta, SETPOINT_CHANNELS, Segment, SegmentBy,
-    SegmentChannel, SegmentMode, SegmentOptions, channel_stats, downsample, segment_analytics,
-    window_samples,
+    SegmentChannel, SegmentMode, SegmentOptions, channel_stats, downsample, sample_every,
+    segment_analytics, window_samples,
 };
 pub use client::{AnalyzedExercise, Credentials, Technogym, TechnogymBuilder, is_auth_error};
 pub use error::{Error, Result};

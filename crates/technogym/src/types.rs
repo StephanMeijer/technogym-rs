@@ -274,7 +274,8 @@ pub struct HrZone {
     pub seconds_in_zone: f64,
 }
 
-/// One second of an exercise: `t` plus one value per machine channel (`Speed`, `Power`, ...).
+/// A reading of an exercise: `t` plus one value per machine channel (`Speed`, `Power`, ...).
+/// Change-driven: a row is sent when a value changes, and holds until the next row.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct AnalyticsSample {
     /// Seconds since the start of the exercise.
@@ -321,7 +322,7 @@ pub struct ExerciseAnalytics {
     pub equipment_type: String,
     /// Channel names in descriptor order. Strength machines have none.
     pub channels: Vec<String>,
-    /// 1 Hz samples.
+    /// Change-driven samples, sorted by `t`.
     pub samples: Vec<AnalyticsSample>,
     /// Heart-rate samples.
     pub hr: Vec<HrSample>,

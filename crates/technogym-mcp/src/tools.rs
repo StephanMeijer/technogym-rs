@@ -11,8 +11,8 @@ use serde_json::{Value, json};
 use technogym::dates::{add_days, parse_iso, to_iso, today};
 use technogym::parse::{parse_exercise_analytics, parse_workout_session};
 use technogym::{
-    SegmentBy, SegmentOptions, Technogym, channel_stats, downsample, segment_analytics,
-    window_samples,
+    SegmentBy, SegmentOptions, Technogym, channel_stats, downsample, sample_every,
+    segment_analytics, window_samples,
 };
 
 use crate::results::{MAX_RESULT_CHARS, compact_json, error_result, json_result, text_result};
@@ -315,7 +315,7 @@ impl TechnogymMcp {
 
     #[tool(
         name = "get_exercise_analytics",
-        description = "Granular analytics for one exercise, coarse to fine: summary totals; channelStats (avg/max/min per machine channel over the full 1 Hz data); laps (console auto-laps, per km on a treadmill); segments, by default one per INTERVAL detected from setpoint changes (speed/grade/level), each with start/end, setpoint, pace, distance and avg/max/min of every channel; samples, the time series every 10 s by default; hr and hrZones. Channels are whatever the machine reports (Skillrun: Speed, Grade, HDistance, RunningCadence, RunningPower; bikes: Power, Rpm...). Strength machines have no time series. For interval analysis: call once with defaults, then zoom into one interval with from_sec/to_sec and sample_every_seconds=1.",
+        description = "Granular analytics for one exercise, coarse to fine: summary totals; channelStats (time-weighted avg, max, min per machine channel over the whole exercise); laps (console auto-laps, per km on a treadmill); segments, by default one per INTERVAL detected from setpoint changes (speed/grade/level), each with start/end, setpoint, pace, distance and avg/max/min of every channel; samples, the time series as the readings in effect every 10 s by default (rows are change-driven: a value holds until the next row); hr and hrZones. Channels are whatever the machine reports (Skillrun: Speed, Grade, HDistance, RunningCadence, RunningPower; bikes: Power, Rpm...). Strength machines have no time series. For interval analysis: call once with defaults, then zoom into one interval with from_sec/to_sec and sample_every_seconds=1.",
         annotations(
             title = "Exercise analytics",
             read_only_hint = true,
@@ -353,8 +353,8 @@ impl TechnogymMcp {
                 options,
             );
             let stats = channel_stats(&analytics.samples, &analytics.channels);
-            let samples = downsample(&window_samples(&analytics.samples, from_sec, to_sec), step);
-            let hr = downsample(&window_samples(&analytics.hr, from_sec, to_sec), step);
+            let samples = sample_every(&window_samples(&analytics.samples, from_sec, to_sec), step);
+            let hr = sample_every(&window_samples(&analytics.hr, from_sec, to_sec), step);
 
             let mut value = serde_json::to_value(&analytics).unwrap_or(Value::Null);
             value["channelStats"] = json!(stats);

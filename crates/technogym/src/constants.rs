@@ -14,8 +14,8 @@ pub const LOGIN_PATH: &str = "/v2/enduser/authentication/login";
 pub const APP_ID: &str = "EC1D38D7-D359-48D0-A60C-D8C0B8FB9DF9";
 /// App name of the official end-user web app.
 pub const APP_NAME: &str = "enduserweb";
-/// App version reported alongside [`APP_NAME`].
-pub const APP_VERSION: &str = "1.0";
+/// The `x-mwapps-clientversion` header: `<version>,<app name>` of the official end-user web app.
+pub const CLIENT_VERSION: &str = "1.0,enduserweb";
 /// The `User-Agent` this crate sends.
 pub const USER_AGENT_VALUE: &str = "technogym-rs (+https://github.com/StephanMeijer/technogym-rs)";
 
@@ -28,7 +28,7 @@ pub fn app_headers() -> HeaderMap {
     h.insert("x-mwapps-client", HeaderValue::from_static(APP_NAME));
     h.insert(
         "x-mwapps-clientversion",
-        HeaderValue::from_static("1.0,enduserweb"),
+        HeaderValue::from_static(CLIENT_VERSION),
     );
     h
 }

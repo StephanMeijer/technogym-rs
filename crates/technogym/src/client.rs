@@ -9,8 +9,8 @@ use reqwest::header::{AUTHORIZATION, HeaderValue};
 use serde_json::{Map, Value, json};
 
 use crate::analysis::{
-    ChannelStats, HrStats, Segment, SegmentMode, SegmentOptions, add_heart_rate, channel_stats,
-    segment_analytics,
+    ChannelStats, GradeBands, HrStats, Segment, SegmentMode, SegmentOptions, add_heart_rate,
+    channel_stats, exercise_elevation_gain, grade_bands, segment_analytics,
 };
 use crate::constants::{CORE_URL, LOGIN_PATH, SERVICES_URL, app_headers};
 use crate::dates::{add_days, to_iso, to_partition_key, today};
@@ -71,6 +71,10 @@ pub struct AnalyzedExercise {
     pub channel_stats: std::collections::BTreeMap<String, ChannelStats>,
     /// Heart rate over the whole exercise, with its coverage; `None` without readings.
     pub hr_stats: Option<HrStats>,
+    /// Metres climbed over the whole exercise.
+    pub elevation_gain_m: Option<f64>,
+    /// Seconds moving per grade band.
+    pub grade_bands: Option<GradeBands>,
     /// How the exercise was split.
     pub segment_mode: SegmentMode,
     /// The segments.
@@ -689,6 +693,8 @@ impl Technogym {
         let channel_stats = channel_stats(&analytics.samples, &analytics.channels);
         let hr_stats = add_heart_rate(&analytics, &mut segments);
         Ok(AnalyzedExercise {
+            elevation_gain_m: exercise_elevation_gain(&analytics.samples),
+            grade_bands: grade_bands(&analytics.samples),
             analytics,
             channel_stats,
             hr_stats,

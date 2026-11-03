@@ -1,3 +1,7 @@
+#![expect(
+    clippy::doc_markdown,
+    reason = "tool and CLI docs are MCP schema and clap help text read by a model, not rustdoc"
+)]
 //! `technogym-mcp`: the MCP server on stdio (default), `login`, `logout`, or `serve-http`.
 
 use std::sync::Arc;
@@ -17,7 +21,6 @@ struct Cli {
 }
 
 #[derive(Subcommand)]
-#[allow(clippy::doc_markdown)]
 enum Command {
     /// Sign in to mywellness once and save the session (email/password from the environment or the terminal).
     Login,

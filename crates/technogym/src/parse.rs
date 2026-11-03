@@ -70,7 +70,10 @@ pub fn num_or_null(value: &Value) -> Option<f64> {
 }
 
 /// A number, or a numeric string, truncated to an integer.
-#[allow(clippy::cast_possible_truncation)]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "truncation toward zero is the intent"
+)]
 pub fn int_or_null(value: &Value) -> Option<i64> {
     num_or_null(value).map(|f| f.trunc() as i64)
 }

@@ -1,4 +1,7 @@
-#![allow(dead_code)]
+#![allow(
+    dead_code,
+    reason = "shared by test binaries that use different helpers"
+)]
 use serde_json::Value;
 
 pub fn fixture(name: &str) -> Value {

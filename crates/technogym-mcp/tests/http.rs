@@ -1,4 +1,7 @@
-#![allow(clippy::too_many_lines)]
+#![expect(
+    clippy::too_many_lines,
+    reason = "one flow test walks register, authorize, sign in, token and /mcp"
+)]
 //! The hosted mode end to end: register → authorize → sign in → token → /mcp, against a mocked
 //! mywellness.
 

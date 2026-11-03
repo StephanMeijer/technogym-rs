@@ -87,6 +87,8 @@ return_self_not_must_use = "allow"
 missing_panics_doc = "allow"
 # Reason: axum extractors hand over std HashMaps; nothing here picks a hasher.
 implicit_hasher = "allow"
+# Every remaining allow or expect says why.
+allow_attributes_without_reason = "warn"
 # Reason: handlers return an HTTP response as the error; boxing it buys nothing.
 result_large_err = "allow"
 

@@ -9,7 +9,7 @@ homepage.workspace = true
 authors.workspace = true
 description = "MCP server for Technogym mywellness: read your gym workouts, sets and treadmill/bike analytics from Claude and other MCP clients"
 readme = "README.md"
-keywords = ["technogym", "mywellness", "mcp", "model-context-protocol", "claude"]
+keywords = ["technogym", "mywellness", "mcp", "claude"]
 categories = ["command-line-utilities"]
 
 [[bin]]

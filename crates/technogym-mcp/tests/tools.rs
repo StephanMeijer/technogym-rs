@@ -188,6 +188,7 @@ async fn every_tool_answers_over_a_saved_session() {
     assert_eq!(a["sampleCount"], 3);
     assert_eq!(a["segmentMode"], "laps");
     assert_eq!(a["channelStats"]["Speed"]["max"], 12.0);
+    assert_eq!(a["hrStats"]["max"], 130);
     assert_eq!(
         a["raw"]["analitics"]["samples"],
         "<4 samples omitted; see samples>"

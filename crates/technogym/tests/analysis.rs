@@ -5,8 +5,9 @@
 use std::collections::BTreeMap;
 
 use technogym::{
-    AnalyticsSample, HrSample, Lap, SegmentBy, SegmentChannel, SegmentMode, SegmentOptions,
-    channel_stats, downsample, sample_every, segment_analytics, window_samples,
+    AnalyticsSample, ExerciseAnalytics, HrSample, Lap, SegmentBy, SegmentChannel, SegmentMode,
+    SegmentOptions, add_heart_rate, channel_stats, downsample, hr_stats, sample_every,
+    segment_analytics, window_samples,
 };
 
 fn sample(t: i64, speed: f64, grade: f64, dist: f64) -> AnalyticsSample {
@@ -276,4 +277,33 @@ fn an_interval_lasts_until_the_next_setpoint_change() {
 fn segment_by_parses_case_insensitively() {
     assert_eq!("LAPS".parse::<SegmentBy>().unwrap(), SegmentBy::Laps);
     assert!("sometimes".parse::<SegmentBy>().is_err());
+}
+
+#[test]
+fn heart_rate_holds_at_most_five_seconds_and_reports_coverage() {
+    // 100 bpm at 0..10 (1 Hz), then the strap drops out until 30, then 150 bpm for 10 s.
+    let mut rows: Vec<(i64, i64)> = (0..10).map(|t| (t, 100)).collect();
+    rows.extend((30..40).map(|t| (t, 150)));
+    let hr = sparse(&rows);
+    let s = hr_stats(&hr, 0, 40).unwrap();
+    assert_eq!((s.min, s.max), (100, 150));
+    // Covered: 0..9 (9 s), 9..14 (5 s, held at most 5 s), 30..40 (10 s) = 24 of 40.
+    assert_eq!(s.coverage, 0.6);
+    assert_eq!(s.avg, 120.8, "(14 * 100 + 10 * 150) / 24");
+    assert_eq!(hr_stats(&hr, 15, 30), None, "no reading in the gap");
+
+    let analytics = ExerciseAnalytics {
+        samples: vec![sample(1, 10.0, 0.0, 3.0), sample(40, 10.0, 0.0, 111.0)],
+        hr,
+        ..ExerciseAnalytics::default()
+    };
+    let opts = SegmentOptions {
+        segment_by: SegmentBy::Fixed,
+        segment_seconds: Some(20),
+    };
+    let (_, mut segments) = segment_analytics(&analytics.samples, &channels(), &[], opts);
+    let whole = add_heart_rate(&analytics, &mut segments).unwrap();
+    assert_eq!(whole.max, 150);
+    assert_eq!(segments[0].hr.as_ref().unwrap().max, 100);
+    assert_eq!(segments[1].hr.as_ref().unwrap().min, 150);
 }

@@ -11,6 +11,8 @@ use crate::error::{Error, Result};
 const RETRY_STATUSES: &[u16] = &[408, 500, 502, 503, 504];
 /// The longest a `Retry-After` is honoured; anything above becomes an [`Error::RateLimit`].
 const MAX_RETRY_AFTER: Duration = Duration::from_secs(60);
+/// The longest the doubling backoff grows to, whatever `retries` is.
+const MAX_BACKOFF: Duration = Duration::from_secs(30);
 
 /// Timeout, retries and backoff for every request.
 #[derive(Clone, Debug)]
@@ -19,7 +21,7 @@ pub struct TransportOptions {
     pub timeout: Duration,
     /// How many times a transient failure is retried. Default 3.
     pub retries: u32,
-    /// Delay before the first retry, doubled on each retry after it. Default 500 ms.
+    /// Delay before the first retry, doubled on each retry after it and capped at 30 s. Default 500 ms.
     pub backoff: Duration,
 }
 
@@ -75,7 +77,7 @@ impl Fetcher {
                 Ok(res) => res,
                 Err(source) if can_retry => {
                     tracing::debug!(url = %safe_url, attempt, "retrying after transport error: {source}");
-                    pause = Some(self.options.backoff * 2u32.pow(attempt));
+                    pause = Some(backoff_delay(self.options.backoff, attempt));
                     attempt += 1;
                     continue;
                 }
@@ -93,7 +95,7 @@ impl Fetcher {
             }
             if can_retry && RETRY_STATUSES.contains(&status.as_u16()) {
                 tracing::debug!(url = %safe_url, attempt, status = status.as_u16(), "retrying");
-                pause = Some(self.options.backoff * 2u32.pow(attempt));
+                pause = Some(backoff_delay(self.options.backoff, attempt));
                 attempt += 1;
                 continue;
             }
@@ -110,6 +112,12 @@ impl Fetcher {
             return Err(to_error(res, status, safe_url).await);
         }
     }
+}
+
+/// `base` doubled `attempt` times, never above [`MAX_BACKOFF`] and never overflowing.
+fn backoff_delay(base: Duration, attempt: u32) -> Duration {
+    base.saturating_mul(2u32.saturating_pow(attempt))
+        .min(MAX_BACKOFF)
 }
 
 /// `Retry-After` in seconds, when the response carries one as a number.
@@ -140,4 +148,21 @@ async fn to_error(res: Response, status: StatusCode, url: String) -> Error {
 /// Drops the query string, so an error message can never carry one.
 fn redact(url: &str) -> String {
     url.split('?').next().unwrap_or(url).to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn backoff_doubles_then_caps_and_never_overflows() {
+        let half = Duration::from_millis(500);
+        assert_eq!(backoff_delay(half, 0), half);
+        assert_eq!(backoff_delay(half, 1), Duration::from_secs(1));
+        assert_eq!(backoff_delay(half, 5), Duration::from_secs(16));
+        assert_eq!(backoff_delay(half, 6), MAX_BACKOFF);
+        assert_eq!(backoff_delay(half, 40), MAX_BACKOFF);
+        assert_eq!(backoff_delay(Duration::MAX, 40), MAX_BACKOFF);
+        assert_eq!(backoff_delay(Duration::ZERO, 40), Duration::ZERO);
+    }
 }

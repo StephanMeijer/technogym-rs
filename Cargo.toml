@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/technogym", "crates/technogym-mcp"]
 
 [workspace.package]
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 # The floor of the resolved dependency graph (uuid 1.29 via rmcp asks for 1.89), checked by
 # ci.yml's MSRV test leg. A fact about today's tree, not a support promise.
@@ -14,7 +14,7 @@ homepage = "https://github.com/StephanMeijer/technogym-rs"
 authors = ["Stephan Meijer <me@stephanmeijer.com>"]
 
 [workspace.dependencies]
-technogym = { path = "crates/technogym", version = "0.1.1" }
+technogym = { path = "crates/technogym", version = "0.1.2" }
 
 async-trait = "0.1"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }

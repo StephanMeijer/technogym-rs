@@ -14,6 +14,26 @@ pub const LOGIN_HINT: &str = "run `technogym-mcp login` in a terminal, or set TE
 /// What to tell the user when there is no usable login, when hosted.
 pub const RECONNECT_HINT: &str = "reconnect the Technogym connector in your MCP client (in claude.ai: Settings → Connectors), then try again";
 
+/// Other mywellness hosts for the client to talk to (tests, proxies).
+pub(crate) struct BaseUrls {
+    core: String,
+    services: String,
+}
+
+impl BaseUrls {
+    pub(crate) fn new(core_url: impl Into<String>, services_url: impl Into<String>) -> Self {
+        Self {
+            core: core_url.into(),
+            services: services_url.into(),
+        }
+    }
+
+    pub(crate) fn apply(&self, b: TechnogymBuilder) -> TechnogymBuilder {
+        b.core_url(self.core.clone())
+            .services_url(self.services.clone())
+    }
+}
+
 /// Hands the tools a signed-in client.
 #[async_trait]
 pub trait ApiSource: Send + Sync {
@@ -33,7 +53,7 @@ pub struct FileSource {
     dir: PathBuf,
     credentials: Option<Credentials>,
     facility: Option<String>,
-    base_urls: Option<(String, String)>,
+    base_urls: Option<BaseUrls>,
     current: tokio::sync::Mutex<Option<Arc<Technogym>>>,
     /// Set by `reset`, honoured by the next `get`: never lost to a lock held by another call.
     stale: AtomicBool,
@@ -66,7 +86,7 @@ impl FileSource {
         core_url: impl Into<String>,
         services_url: impl Into<String>,
     ) -> Self {
-        self.base_urls = Some((core_url.into(), services_url.into()));
+        self.base_urls = Some(BaseUrls::new(core_url, services_url));
         self
     }
 
@@ -75,8 +95,8 @@ impl FileSource {
         if let Some(f) = &self.facility {
             b = b.facility(f.clone());
         }
-        if let Some((core, services)) = &self.base_urls {
-            b = b.core_url(core.clone()).services_url(services.clone());
+        if let Some(urls) = &self.base_urls {
+            b = urls.apply(b);
         }
         b
     }

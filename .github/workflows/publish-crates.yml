@@ -26,13 +26,13 @@ jobs:
     runs-on: ubuntu-latest
     environment: release
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
         with:
           ref: ${{ inputs.ref }}
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
       # Mint a short-lived OIDC token for crates.io (Trusted Publishing).
-      - uses: rust-lang/crates-io-auth-action@v1
+      - uses: rust-lang/crates-io-auth-action@v1.0.6
         id: auth
       - name: Publish to crates.io
         env:

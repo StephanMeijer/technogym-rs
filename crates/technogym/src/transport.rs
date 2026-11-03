@@ -9,6 +9,8 @@ use serde_json::Value;
 use crate::error::{Error, Result};
 
 const RETRY_STATUSES: &[u16] = &[408, 500, 502, 503, 504];
+/// The longest a `Retry-After` is honoured; anything above becomes an [`Error::RateLimit`].
+const MAX_RETRY_AFTER: Duration = Duration::from_secs(60);
 
 /// Timeout, retries and backoff for every request.
 #[derive(Clone, Debug)]
@@ -43,7 +45,8 @@ impl Fetcher {
     }
 
     /// POSTs `body` as JSON. With `retry`, a network error or a retryable status is tried again
-    /// up to `retries` times; the login POST passes `false`.
+    /// up to `retries` times, and a 429 after its `Retry-After` (when it is at most
+    /// [`MAX_RETRY_AFTER`]); the login POST passes `false`.
     pub(crate) async fn post_json(
         &self,
         url: &str,
@@ -53,9 +56,11 @@ impl Fetcher {
     ) -> Result<Response> {
         let safe_url = redact(url);
         let mut attempt = 0;
+        // What to wait before the next attempt: the doubling backoff, or the server's own ask.
+        let mut pause = None;
         loop {
-            if attempt > 0 {
-                tokio::time::sleep(self.options.backoff * 2u32.pow(attempt - 1)).await;
+            if let Some(wait) = pause.take() {
+                tokio::time::sleep(wait).await;
             }
             let can_retry = retry && attempt < self.options.retries;
             let sent = self
@@ -70,6 +75,7 @@ impl Fetcher {
                 Ok(res) => res,
                 Err(source) if can_retry => {
                     tracing::debug!(url = %safe_url, attempt, "retrying after transport error: {source}");
+                    pause = Some(self.options.backoff * 2u32.pow(attempt));
                     attempt += 1;
                     continue;
                 }
@@ -87,6 +93,17 @@ impl Fetcher {
             }
             if can_retry && RETRY_STATUSES.contains(&status.as_u16()) {
                 tracing::debug!(url = %safe_url, attempt, status = status.as_u16(), "retrying");
+                pause = Some(self.options.backoff * 2u32.pow(attempt));
+                attempt += 1;
+                continue;
+            }
+            if can_retry
+                && status == StatusCode::TOO_MANY_REQUESTS
+                && let Some(wait) = retry_after(&res).map(Duration::from_secs)
+                && wait <= MAX_RETRY_AFTER
+            {
+                tracing::debug!(url = %safe_url, attempt, wait_s = wait.as_secs(), "rate limited, waiting");
+                pause = Some(wait);
                 attempt += 1;
                 continue;
             }
@@ -95,13 +112,19 @@ impl Fetcher {
     }
 }
 
+/// `Retry-After` in seconds, when the response carries one as a number.
+fn retry_after(res: &Response) -> Option<u64> {
+    res.headers()
+        .get(RETRY_AFTER)
+        .and_then(|v| v.to_str().ok()?.trim().parse().ok())
+}
+
 async fn to_error(res: Response, status: StatusCode, url: String) -> Error {
     if status == StatusCode::TOO_MANY_REQUESTS {
-        let retry_after = res
-            .headers()
-            .get(RETRY_AFTER)
-            .and_then(|v| v.to_str().ok()?.trim().parse().ok());
-        return Error::RateLimit { url, retry_after };
+        return Error::RateLimit {
+            url,
+            retry_after: retry_after(&res),
+        };
     }
     if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
         return Error::Auth(format!("not authorized for {url} ({status})"));

@@ -32,7 +32,6 @@ chrono.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "signal", "sync", "io-std", "net"] }
 clap.workspace = true
 axum.workspace = true
-tower.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 tokio-util = "0.7"

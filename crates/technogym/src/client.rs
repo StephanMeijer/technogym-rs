@@ -82,7 +82,7 @@ pub fn is_auth_error(errors: &[Value]) -> bool {
             .or_else(|| e.get("message"))
             .and_then(Value::as_str)
             .unwrap_or("");
-        AUTH_ERROR_DETAILS.contains(&details) || details.to_ascii_lowercase().contains("token")
+        AUTH_ERROR_DETAILS.contains(&details)
     })
 }
 

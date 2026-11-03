@@ -134,12 +134,35 @@ fn parsed(result: &CallToolResult) -> Value {
 }
 
 #[tokio::test]
+async fn training_trends_count_each_session_once() {
+    let server = mywellness().await;
+    let h = harness(&server, Some(saved_session("tok-1")), None).await;
+    let trends = parsed(
+        &call(
+            &h,
+            "get_training_trends",
+            json!({ "from_date": "2026-09-01", "to_date": "2026-09-30" }),
+        )
+        .await,
+    );
+    assert_eq!(trends["fromDate"], "2026-09-01");
+    let weeks = trends["weeks"].as_array().unwrap();
+    assert_eq!(
+        weeks
+            .iter()
+            .map(|w| w["sessions"].as_i64().unwrap())
+            .sum::<i64>(),
+        2
+    );
+}
+
+#[tokio::test]
 async fn every_tool_answers_over_a_saved_session() {
     let server = mywellness().await;
     let h = harness(&server, Some(saved_session("tok-1")), None).await;
 
     let tools = h.client.list_all_tools().await.unwrap();
-    assert_eq!(tools.len(), 6);
+    assert_eq!(tools.len(), 7);
 
     let account = parsed(&call(&h, "get_account_info", json!({})).await);
     assert_eq!(account["userId"], "u1");

@@ -14,6 +14,7 @@ access to your Technogym **mywellness** training history. Built on the
 | `get_recent_workouts(days=14)` | `{ days, sessions, omitted, note? }`: the sessions of the last N days, newest first and fully loaded, as many as fit one result. |
 | `get_exercise_analytics(analytics_id, sample_every_seconds=10, segment_by="auto", segment_seconds=300, from_sec=0, to_sec=0, include_raw=false)` | Channel stats, laps, interval segments, the time series and HR. |
 | `get_session_heart_rate(session_id, date?, sample_every_seconds=10)` | The HR trace, zones and avg/min/max HR. |
+| `get_training_trends(from_date?, to_date?)` | Sessions, minutes, calories and MOVEs per ISO week (default the last 12 weeks), oldest first. |
 
 Interval analysis: call `get_exercise_analytics` once with defaults to get the intervals, then
 again with `from_sec`/`to_sec` set to one interval and `sample_every_seconds=1`.

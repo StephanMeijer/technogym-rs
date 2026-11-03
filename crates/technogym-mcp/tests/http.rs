@@ -469,7 +469,7 @@ async fn the_full_flow_signs_in_exchanges_the_code_and_serves_mcp() {
     .unwrap();
     assert_eq!(
         listed["result"]["tools"].as_array().unwrap().len(),
-        6,
+        7,
         "{text}"
     );
 

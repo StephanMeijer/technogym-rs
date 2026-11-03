@@ -7,21 +7,20 @@ use serde_json::Value;
 /// One tool result may not exceed this; 1 Hz analytics of a long run reach megabytes.
 pub const MAX_RESULT_CHARS: usize = 200_000;
 
-/// Cuts `text` at [`MAX_RESULT_CHARS`] with a note saying so.
-pub fn truncate(text: String) -> String {
+/// Cuts `text` at [`MAX_RESULT_CHARS`] with a note saying so; `hint` tells the caller how to
+/// ask for less.
+pub fn truncate(text: String, hint: &str) -> String {
     if text.chars().count() <= MAX_RESULT_CHARS {
         return text;
     }
     let total = text.chars().count();
     let kept: String = text.chars().take(MAX_RESULT_CHARS).collect();
-    format!(
-        "{kept}\n[truncated: {MAX_RESULT_CHARS} of {total} characters; narrow the window or raise sample_every_seconds]"
-    )
+    format!("{kept}\n[truncated: {MAX_RESULT_CHARS} of {total} characters; {hint}]")
 }
 
-/// A successful text result.
-pub fn text_result(text: String) -> CallToolResult {
-    CallToolResult::success(vec![ContentBlock::text(truncate(text))])
+/// A successful text result; `hint` is for the truncation note.
+pub fn text_result(text: String, hint: &str) -> CallToolResult {
+    CallToolResult::success(vec![ContentBlock::text(truncate(text, hint))])
 }
 
 /// A failed result with a plain-language message.
@@ -29,11 +28,12 @@ pub fn error_result(message: String) -> CallToolResult {
     CallToolResult::error(vec![ContentBlock::text(message)])
 }
 
-/// Pretty-printed JSON.
-pub fn json_result(value: &impl Serialize) -> CallToolResult {
+/// Pretty-printed JSON; `hint` is for the truncation note.
+pub fn json_result(value: &impl Serialize, hint: &str) -> CallToolResult {
     text_result(
         serde_json::to_string_pretty(value)
             .unwrap_or_else(|e| format!("serialisation failed: {e}")),
+        hint,
     )
 }
 
@@ -87,9 +87,9 @@ mod tests {
 
     #[test]
     fn long_results_are_cut_with_a_note() {
-        let text = truncate("x".repeat(MAX_RESULT_CHARS + 5));
+        let text = truncate("x".repeat(MAX_RESULT_CHARS + 5), "ask for less");
         assert!(text.starts_with(&"x".repeat(MAX_RESULT_CHARS)));
-        assert!(text.ends_with("raise sample_every_seconds]"));
-        assert_eq!(truncate("short".into()), "short");
+        assert!(text.ends_with("characters; ask for less]"));
+        assert_eq!(truncate("short".into(), ""), "short");
     }
 }

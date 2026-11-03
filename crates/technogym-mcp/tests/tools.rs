@@ -235,6 +235,56 @@ async fn every_tool_answers_over_a_saved_session() {
 }
 
 #[tokio::test]
+async fn recent_workouts_stop_at_the_result_budget_and_stay_valid_json() {
+    let server = MockServer::start().await;
+    let today = technogym::dates::today();
+    let items: Vec<Value> = (0..8)
+        .map(|i| {
+            json!({
+                "idCr": 2000 + i,
+                "partitionDate": technogym::dates::to_partition_key(technogym::dates::add_days(today, -i)),
+                "name": format!("S{i}"),
+                "type": "WorkoutSession",
+            })
+        })
+        .collect();
+    Mock::given(path(format!("{USER}/ActivityHistory")))
+        .respond_with(data(&json!({ "items": items })))
+        .mount(&server)
+        .await;
+    // Roughly a real strength session's size once pretty-printed.
+    let mut session = fixture("workout_session");
+    session["displayName"] = json!("x".repeat(40_000));
+    Mock::given(path(format!("{USER}/GetPerformedWorkoutSessionByIdCr")))
+        .respond_with(data(&session))
+        .mount(&server)
+        .await;
+    let h = harness(&server, Some(saved_session("tok-1")), None).await;
+
+    let result = parsed(&call(&h, "get_recent_workouts", json!({ "days": 14 })).await);
+    let got = result["sessions"].as_array().unwrap().len();
+    assert!((1..8).contains(&got), "{got} sessions");
+    assert_eq!(result["days"], 14);
+    assert_eq!(result["omitted"], 8 - got);
+    assert!(
+        result["note"]
+            .as_str()
+            .unwrap()
+            .contains("reduce days or call get_workout_session"),
+        "{}",
+        result["note"]
+    );
+    let detail_calls = server
+        .received_requests()
+        .await
+        .unwrap()
+        .iter()
+        .filter(|r| r.url.path().ends_with("GetPerformedWorkoutSessionByIdCr"))
+        .count();
+    assert_eq!(detail_calls, got + 1, "one look past the budget, then stop");
+}
+
+#[tokio::test]
 async fn bad_arguments_are_error_results_not_protocol_errors() {
     let server = mywellness().await;
     let h = harness(&server, Some(saved_session("tok-1")), None).await;

@@ -15,7 +15,7 @@ use technogym::{
     window_samples,
 };
 
-use crate::results::{compact_json, error_result, json_result, text_result};
+use crate::results::{MAX_RESULT_CHARS, compact_json, error_result, json_result, text_result};
 use crate::source::ApiSource;
 
 const INSTRUCTIONS: &str = "Read-only access to the user's Technogym mywellness training history: workout sessions, \
@@ -41,6 +41,13 @@ impl From<technogym::Error> for ToolError {
 }
 
 type ToolResult = Result<CallToolResult, ToolError>;
+
+/// Truncation hints, per tool: what to change to get less back.
+const DATE_RANGE_HINT: &str = "narrow from_date/to_date";
+const ONE_SESSION_HINT: &str = "drop include_raw";
+const RECENT_HINT: &str = "reduce days or call get_workout_session for one session";
+const SAMPLES_HINT: &str = "narrow from_sec/to_sec or raise sample_every_seconds";
+const HR_HINT: &str = "raise sample_every_seconds";
 
 fn date(value: Option<&String>) -> Result<Option<NaiveDate>, ToolError> {
     match value.map(String::as_str).filter(|s| !s.trim().is_empty()) {
@@ -183,7 +190,7 @@ impl TechnogymMcp {
         self.run(|api| async move {
             let mut value = serde_json::to_value(api.user().await?).unwrap_or(Value::Null);
             value["movergy"] = json!(api.get_movergy().await?);
-            Ok(json_result(&value))
+            Ok(json_result(&value, ""))
         })
         .await
     }
@@ -208,13 +215,16 @@ impl TechnogymMcp {
                 .list_sessions(from, to, args.only_workouts.unwrap_or(true))
                 .await?;
             Ok(if sessions.is_empty() {
-                text_result(format!(
-                    "No workout sessions found between {} and {}",
-                    to_iso(from),
-                    to_iso(to)
-                ))
+                text_result(
+                    format!(
+                        "No workout sessions found between {} and {}",
+                        to_iso(from),
+                        to_iso(to)
+                    ),
+                    DATE_RANGE_HINT,
+                )
             } else {
-                json_result(&sessions)
+                json_result(&sessions, DATE_RANGE_HINT)
             })
         })
         .await
@@ -245,7 +255,7 @@ impl TechnogymMcp {
             if args.include_raw.unwrap_or(false) {
                 value["raw"] = raw;
             }
-            Ok(json_result(&value))
+            Ok(json_result(&value, ONE_SESSION_HINT))
         })
         .await
     }
@@ -265,12 +275,39 @@ impl TechnogymMcp {
     ) -> Result<CallToolResult, McpError> {
         self.run(|api| async move {
             let days = args.days.unwrap_or(14).clamp(1, 365);
-            let sessions = api.get_recent_workouts(days).await?;
-            Ok(if sessions.is_empty() {
-                text_result(format!("No workout sessions found in the last {days} days"))
-            } else {
-                json_result(&sessions)
-            })
+            let to = today();
+            let summaries = api.list_sessions(add_days(to, -days), to, true).await?;
+            if summaries.is_empty() {
+                return Ok(text_result(
+                    format!("No workout sessions found in the last {days} days"),
+                    RECENT_HINT,
+                ));
+            }
+            // One request per session, newest first, stopping at the result budget: a session
+            // that would only be cut off again is never downloaded, and the JSON stays whole.
+            let budget = MAX_RESULT_CHARS * 9 / 10;
+            let mut sessions = vec![];
+            let mut used = 0;
+            for s in &summaries {
+                let session = api
+                    .get_workout_session(&s.session_id, Some(parse_iso(&s.date)?))
+                    .await?;
+                let size = serde_json::to_string_pretty(&session)
+                    .map_or(0, |t| t.chars().count());
+                if !sessions.is_empty() && used + size > budget {
+                    break;
+                }
+                used += size;
+                sessions.push(session);
+            }
+            let omitted = summaries.len() - sessions.len();
+            let mut value = json!({ "days": days, "sessions": sessions, "omitted": omitted });
+            if omitted > 0 {
+                value["note"] = json!(format!(
+                    "{omitted} older session(s) left out to stay under the result limit; {RECENT_HINT}"
+                ));
+            }
+            Ok(json_result(&value, RECENT_HINT))
         })
         .await
     }
@@ -320,7 +357,10 @@ impl TechnogymMcp {
                 }
                 value["raw"] = raw;
             }
-            Ok(text_result(compact_json(value, &["samples", "hr"])))
+            Ok(text_result(
+                compact_json(value, &["samples", "hr"]),
+                SAMPLES_HINT,
+            ))
         })
         .await
     }
@@ -350,7 +390,7 @@ impl TechnogymMcp {
             let mut value = serde_json::to_value(&hr).unwrap_or(Value::Null);
             value["sampleCount"] = json!(samples.len());
             value["hrSamples"] = json!(samples);
-            Ok(text_result(compact_json(value, &["hrSamples"])))
+            Ok(text_result(compact_json(value, &["hrSamples"]), HR_HINT))
         })
         .await
     }

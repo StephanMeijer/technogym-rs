@@ -50,8 +50,8 @@ wiremock = "0.6"
 cargo-dist-version = "0.34.0"
 allow-dirty = ["ci"]
 ci = ["github"]
-# No Windows targets: `ring`'s C build under cargo-xwin fails (see NotedThat);
-# Windows users `cargo install technogym-mcp`.
+# No Windows targets: `ring`'s C build fails under cargo-xwin; Windows users
+# `cargo install technogym-mcp`.
 targets = [
   "x86_64-unknown-linux-gnu",
   "aarch64-unknown-linux-gnu",

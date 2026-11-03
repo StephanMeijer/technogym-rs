@@ -478,6 +478,26 @@ async fn a_rate_limit_with_a_short_retry_after_is_waited_out() {
 }
 
 #[tokio::test]
+async fn a_large_retry_budget_does_not_overflow() {
+    let server = MockServer::start().await;
+    Mock::given(path(MOVERGY))
+        .respond_with(ResponseTemplate::new(503))
+        .mount(&server)
+        .await;
+    let tg = builder(&server)
+        .transport(TransportOptions {
+            retries: 40,
+            backoff: Duration::ZERO,
+            ..TransportOptions::default()
+        })
+        .build();
+    tg.set_session(session("tok-1"));
+    let err = tg.get_movergy().await.unwrap_err();
+    assert!(matches!(err, Error::Http { status: 503, .. }), "{err}");
+    assert_eq!(server.received_requests().await.unwrap().len(), 41);
+}
+
+#[tokio::test]
 async fn facility_selection() {
     let server = MockServer::start().await;
     Mock::given(path("/Training/User/u1/MyMovergy"))

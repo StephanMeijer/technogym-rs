@@ -40,7 +40,7 @@ base64 = "0.22"
 rand = "0.9"
 url = "2"
 rpassword = "7"
-dirs = "6"
+dirs = "7"
 
 # Testing
 wiremock = "0.6"

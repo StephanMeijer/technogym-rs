@@ -1,0 +1,14 @@
+.git/
+.github/
+target/
+**/target/
+.env
+.env.*
+!.env.example
+/session/
+*.md
+!crates/*/README.md
+Dockerfile
+.dockerignore
+.idea/
+.vscode/

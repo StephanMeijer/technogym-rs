@@ -1,0 +1,93 @@
+{
+  "id": "ws-1",
+  "startedOn": "2026-09-01T07:05:12",
+  "closedOn": "2026-09-01T07:53:40",
+  "displayName": "Push day",
+  "sessionType": "WorkoutSession",
+  "workoutSessionStatus": "Done",
+  "displayDurationDoneShort": "48 min.",
+  "displayDurationShort": "50 min.",
+  "displayCaloriesDoneShort": "411 kcal",
+  "displayMoveDoneShort": "530",
+  "workoutEfficacy": 88,
+  "workoutEfficacyQuality": "Good",
+  "workoutEfficacyDescription": "Nice work",
+  "isFromTgCoach": true,
+  "startedInFacilityId": "f1",
+  "userWorkoutSessionId": "uws-1",
+  "extData": { "mwc_client_application": "Console" },
+  "muscleScores": [
+    { "muscleName": "Chest", "score": 80 },
+    { "muscleType": "Triceps", "score": "40" }
+  ],
+  "doneSummary": [
+    { "physicalProperty": "Calories", "value": 410.7, "displayValue": 411, "unitOfMeasureShortString": "kcal", "formattedValue": "411 kcal" },
+    { "physicalProperty": "Move", "value": 530, "formattedValue": "530" }
+  ],
+  "physicalActivities": [
+    {
+      "physicalActivityName": "Chest press",
+      "equipmentName": "Chest press #12",
+      "equipmentType": "Selectorized",
+      "physicalActivityType": "StrengthLoad",
+      "isCardio": false,
+      "status": "Done",
+      "position": 1,
+      "displayDurationDoneShort": "6 min.",
+      "displayCaloriesDoneShort": "40 kcal",
+      "displayMoveDoneShort": "90",
+      "muscles": [{ "muscleName": "Chest" }, { "muscleType": "Triceps" }],
+      "physicalActivityShortName": "CP",
+      "physicalActivityCode": 12,
+      "physicalActivityId": "pa-chest",
+      "equipmentCode": 7,
+      "targetType": "Reps",
+      "hasAdjustments": true,
+      "hasBeenDonePartially": false,
+      "estimatedDuration": 360,
+      "estimatedCalories": 38,
+      "estimatedMove": 85,
+      "analyticsId": "an-strength",
+      "performedPhysicalActivity": {
+        "id": "ppa-1",
+        "doneOn": "2026-09-01T07:10:00",
+        "doneAs": "Prescribed",
+        "manuallyDone": false,
+        "progress": "100",
+        "extData": { "mwc_console": "C1", "mwc_empty": "", "other": null, "note": "x" },
+        "data": {
+          "data": [
+            { "physicalProperty": "Rm1", "value": 72.5, "displayValue": 72.5, "unitOfMeasureShortString": "kg", "formattedValue": "72,5 kg" }
+          ],
+          "constraints": [
+            { "physicalProperty": "IsoWeight", "discreteRange": { "min": 5, "max": 100, "step": 2.5 }, "isReadOnly": false, "visibility": "Visible" },
+            { "physicalProperty": "" }
+          ],
+          "steps": [
+            { "data": [
+              { "physicalProperty": "IsoReps", "value": 10 },
+              { "physicalProperty": "IsoWeight", "value": 40, "displayValue": 40, "unitOfMeasureShortString": "kg" },
+              { "physicalProperty": "RestTime", "value": 60 }
+            ] },
+            { "data": [
+              { "physicalProperty": "Reps", "value": "8" },
+              { "physicalProperty": "Weight", "value": 45 }
+            ] }
+          ]
+        }
+      },
+      "displayPrescibedPhysicalActivity": {
+        "steps": [ { "properties": [ { "property": "Reps", "value": 12 }, { "property": "Weight", "value": 35 } ] } ]
+      }
+    },
+    {
+      "physicalActivityName": "Skillrun",
+      "isCardio": true,
+      "performedPhysicalActivity": { "id": "ppa-2", "analiticsId": "an-run", "data": { "data": [], "steps": [] } }
+    },
+    {
+      "physicalActivityName": "Never done",
+      "performedPhysicalActivity": {}
+    }
+  ]
+}

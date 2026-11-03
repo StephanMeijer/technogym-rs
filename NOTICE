@@ -1,0 +1,13 @@
+technogym-rs
+Copyright (c) 2026 Stephan Meijer
+
+Licensed under the Mozilla Public License, v. 2.0 (see LICENSE).
+
+Unofficial. Not affiliated with, endorsed by, or supported by Technogym.
+Technogym and mywellness are trademarks of Technogym S.p.A.
+
+This project was written against the mywellness end-user JSON API. The idea and
+the shape of the tool set were inspired by technogym-js
+(https://github.com/DynamicsNinja/technogym-js, MIT) and the Technogym server in
+health_mcp (https://github.com/ErikAnkerKilbergSkallevold/health_mcp, MIT).
+No code was copied from either.

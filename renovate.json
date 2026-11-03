@@ -1,0 +1,24 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", ":semanticCommits", "group:allNonMajor", "schedule:weekly"],
+  "vulnerabilityAlerts": {
+    "description": "A dependency with a known advisory does not wait for the weekly window.",
+    "schedule": ["at any time"],
+    "minimumReleaseAge": null,
+    "labels": ["security"]
+  },
+  "lockFileMaintenance": {
+    "description": "Every cargo call in CI passes --locked, so without this Cargo.lock only moves when someone runs cargo update by hand. The MSRV leg of the test matrix catches a refresh that raises the rust-version floor.",
+    "enabled": true
+  },
+  "packageRules": [
+    {
+      "description": "Base-image digest bumps are unscheduled: the Dockerfile pins by digest and only a new digest takes a security fix.",
+      "matchManagers": ["dockerfile"],
+      "matchUpdateTypes": ["digest", "pinDigest"],
+      "schedule": ["at any time"],
+      "minimumReleaseAge": null,
+      "labels": ["base-image"]
+    }
+  ]
+}

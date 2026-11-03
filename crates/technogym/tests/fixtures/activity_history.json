@@ -1,0 +1,30 @@
+{
+  "items": [
+    {
+      "idCr": 1001,
+      "partitionDate": 20260901,
+      "hour": 7,
+      "minute": 5,
+      "name": "Push day",
+      "type": "WorkoutSession",
+      "totalDurationInMinutes": "48",
+      "moves": 530,
+      "calories": 410.7,
+      "numberOfExerciseDoneWithGroups": 6,
+      "numberOfExerciseToDoWithGroups": 7,
+      "userWorkoutSessionId": "uws-1",
+      "facilityId": "f1",
+      "workoutEffectiveness": 88,
+      "workoutCompliance": 95
+    },
+    {
+      "idCr": "1002",
+      "partitionDate": "20260903",
+      "hour": 18,
+      "minute": 30,
+      "name": "Run",
+      "type": "WorkoutSession",
+      "duration": 31
+    }
+  ]
+}

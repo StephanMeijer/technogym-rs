@@ -1,0 +1,8 @@
+/target/
+**/*.rs.bk
+.env
+/session/
+.DS_Store
+.idea/
+.vscode/
+lcov.info

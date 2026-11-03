@@ -1,0 +1,31 @@
+# Configuration for `cargo deny check advisories`, run by the `advisories` job in
+# .github/workflows/ci.yml on every pull request and push to main, and by
+# advisories.yml on a weekday schedule.
+#
+# Only the `advisories` check runs. `licenses`, `bans` and `sources` are not enabled:
+# the tree is all crates.io, and a red check that means "tidy up" is one people learn
+# to click past. Enabling one is a word in the workflow's `check` arguments plus the
+# matching section here.
+
+[graph]
+# A superset of what ships: an advisory reachable only through a feature nothing
+# enables today is one flag away from being reachable.
+all-features = true
+
+[advisories]
+# The source is pinned so the database cannot be silently redirected; its contents
+# float, necessarily.
+db-urls = ["https://github.com/rustsec/advisory-db"]
+unmaintained = "all"
+unsound = "all"
+# Every cargo call in CI passes `--locked`, so without this a yanked release stays in
+# Cargo.lock indefinitely and nothing ever mentions it.
+yanked = "deny"
+# An ignore entry that stops matching the tree fails the check, so suppressions rot
+# loudly instead of quietly.
+unused-ignored-advisory = "deny"
+# Only consulted for an `--offline` run; CI always fetches.
+maximum-db-staleness = "P7D"
+
+# Every entry carries a reason and a link to the upstream fix.
+ignore = []

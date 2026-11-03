@@ -1,0 +1,89 @@
+name: Publish crate (initial)
+
+# The *first-ever* publish of a crate. Trusted Publishing (OIDC) cannot create new
+# crates (crates.io answers HTTP 403), so the bootstrap uses the long-lived repo
+# secret CARGO_REGISTRY_TOKEN. Afterwards every version publishes via OIDC through
+# release-plz (ci.yml). Best-effort, this also registers the two Trusted Publishing
+# configs (ci.yml + release, publish-crate-manual.yml + release); if that fails,
+# add them at https://crates.io/crates/<NAME>/settings (see RELEASING.md).
+
+on:
+  workflow_dispatch:
+    inputs:
+      crate:
+        description: 'Crate name to publish (must not be publish=false)'
+        required: true
+        type: string
+      register_trusted_publishers:
+        description: 'After publish, register Trusted Publisher configs on crates.io (best-effort)'
+        required: false
+        type: boolean
+        default: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+concurrency:
+  group: publish-crate-initial-${{ inputs.crate }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: 'Initial publish: ${{ inputs.crate }}'
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Validate crate is publishable
+        env:
+          CRATE: ${{ inputs.crate }}
+        run: |
+          set -euo pipefail
+          if ! printf '%s' "${CRATE}" | grep -Eq '^[A-Za-z0-9_][A-Za-z0-9_-]{0,63}$'; then
+            echo "::error::invalid crate name '${CRATE}'"
+            exit 1
+          fi
+          crate_toml="crates/${CRATE}/Cargo.toml"
+          if [ ! -f "${crate_toml}" ]; then
+            echo "::error::${CRATE}: no Cargo.toml at crates/${CRATE}/"
+            exit 1
+          fi
+          if grep -Eq '^[[:space:]]*publish[[:space:]]*=[[:space:]]*false' "${crate_toml}"; then
+            echo "::error::crate ${CRATE} has publish = false; refusing to publish."
+            exit 1
+          fi
+          declared_name=$(awk -F\" '/^[[:space:]]*name[[:space:]]*=/ { print $2; exit }' "${crate_toml}")
+          if [ "${declared_name}" != "${CRATE}" ]; then
+            echo "::error::crate name mismatch: ${crate_toml} declares name='${declared_name}'"
+            exit 1
+          fi
+      - name: Publish to crates.io
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          CRATE: ${{ inputs.crate }}
+        run: cargo publish -p "${CRATE}"
+      - name: Register Trusted Publishers (best-effort)
+        if: inputs.register_trusted_publishers
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          CRATE: ${{ inputs.crate }}
+        run: |
+          set -uo pipefail
+          for workflow in "ci.yml" "publish-crate-manual.yml"; do
+            echo "  -> ${workflow} + release environment"
+            curl -sf \
+              -X POST \
+              -H "Authorization: Bearer ${CARGO_REGISTRY_TOKEN}" \
+              -H "Content-Type: application/json" \
+              -H "User-Agent: technogym-rs-publish (https://github.com/StephanMeijer/technogym-rs)" \
+              "https://crates.io/api/v1/trusted_publishing/github_configs" \
+              -d "{\"github_config\":{\"crate\":\"${CRATE}\",\"repository_owner\":\"StephanMeijer\",\"repository_name\":\"technogym-rs\",\"workflow_filename\":\"${workflow}\",\"environment\":\"release\"}}" \
+              && echo "    OK: ${workflow}" \
+              || echo "    WARNING: failed to register ${workflow} (configure manually at https://crates.io/crates/${CRATE}/settings)"
+          done

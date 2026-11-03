@@ -1,0 +1,26 @@
+# The same advisory check ci.yml runs, on a clock: an advisory is not published in
+# response to activity, and a quiet repository would otherwise not look at
+# Cargo.lock until somebody pushed. Gates nothing. Keep the cargo-deny version in
+# step with ci.yml.
+name: Advisories
+
+on:
+  schedule:
+    - cron: "0 7 * * 1-5"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  advisories:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: taiki-e/install-action@7623a79cdfecb99d681017af368ca353d9f49bb5 # v2.87.19
+        with:
+          tool: cargo-deny@0.20.2
+      - run: cargo deny --locked check advisories

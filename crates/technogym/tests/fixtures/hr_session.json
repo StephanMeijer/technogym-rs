@@ -1,0 +1,7 @@
+{
+  "properties": [
+    { "physicalProperty": "AvgHr", "value": 141, "displayValue": 141, "unitOfMeasureShortString": "bpm", "formattedValue": "141 bpm" }
+  ],
+  "hrSamples": [ { "timestamp": "2026-09-01T07:05:12", "hr": 95 }, { "timestamp": "2026-09-01T07:05:22", "hr": "101" } ],
+  "hrZones": [ { "name": "Z1", "lowerBound": 100, "upperBound": 120, "secondsInZone": 600 } ]
+}

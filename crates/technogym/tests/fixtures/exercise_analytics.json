@@ -1,0 +1,29 @@
+{
+  "name": "Skillrun",
+  "equipmentType": "Skillrun",
+  "date": "03.09.2026",
+  "target": "Duration",
+  "physicalActivityId": "pa-run",
+  "physicalActivityName": "Run",
+  "data": [
+    { "property": "AvgSpeed", "rawValue": 11.2, "uM": "km/h", "value": "11,2 km/h" },
+    { "property": "HDistance", "rawValue": 5000, "uM": "m", "value": "5 km" }
+  ],
+  "analitics": {
+    "descriptor": [
+      { "i": 1, "pr": { "name": "Grade" } },
+      { "i": 0, "pr": { "name": "Speed" } },
+      { "i": 2, "pr": { "name": "HDistance" } },
+      { "i": "x" }
+    ],
+    "samples": [
+      { "t": 1, "vs": [10, 1, 3] },
+      { "t": 2, "vs": [10, 1, 6] },
+      { "t": 3, "vs": [] },
+      { "t": 4, "vs": [12, null, 12] }
+    ],
+    "hr": [ { "t": 1, "hr": 120 }, { "t": 2 }, { "t": 3, "hr": "130" } ],
+    "hrZones": [ { "name": "Z2", "lowerBound": 120, "upperBound": 140, "secondsInZone": 30 } ],
+    "laps": [ { "n": 1, "lapDistance": 1000, "lapTime": 320, "totalDistance": 1000, "totalTime": 320 } ]
+  }
+}

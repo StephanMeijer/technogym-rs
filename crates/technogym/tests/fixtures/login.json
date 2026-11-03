@@ -1,0 +1,14 @@
+{
+  "data": {
+    "token": "tok-1",
+    "userContext": {
+      "id": "u1",
+      "firstName": "Ana",
+      "lastName": "B",
+      "nickName": "ana",
+      "defaultCulture": "en-GB",
+      "measurementSystem": "Metric"
+    },
+    "facilities": [{ "id": "f1", "url": "my-gym", "name": "My Gym" }]
+  }
+}

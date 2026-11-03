@@ -9,7 +9,8 @@ use reqwest::header::{AUTHORIZATION, HeaderValue};
 use serde_json::{Map, Value, json};
 
 use crate::analysis::{
-    ChannelStats, Segment, SegmentMode, SegmentOptions, channel_stats, segment_analytics,
+    ChannelStats, HrStats, Segment, SegmentMode, SegmentOptions, add_heart_rate, channel_stats,
+    segment_analytics,
 };
 use crate::constants::{CORE_URL, LOGIN_PATH, SERVICES_URL, app_headers};
 use crate::dates::{add_days, to_iso, to_partition_key, today};
@@ -66,8 +67,10 @@ pub struct AnalyzedExercise {
     /// The analytics.
     #[serde(flatten)]
     pub analytics: ExerciseAnalytics,
-    /// Per-channel avg / max / min over the full 1 Hz data.
+    /// Per-channel time-weighted avg / max / min over the whole exercise.
     pub channel_stats: std::collections::BTreeMap<String, ChannelStats>,
+    /// Heart rate over the whole exercise, with its coverage; `None` without readings.
+    pub hr_stats: Option<HrStats>,
     /// How the exercise was split.
     pub segment_mode: SegmentMode,
     /// The segments.
@@ -677,16 +680,18 @@ impl Technogym {
         options: SegmentOptions,
     ) -> Result<AnalyzedExercise> {
         let analytics = self.get_exercise_analytics(analytics_id).await?;
-        let (segment_mode, segments) = segment_analytics(
+        let (segment_mode, mut segments) = segment_analytics(
             &analytics.samples,
             &analytics.channels,
             &analytics.laps,
             options,
         );
         let channel_stats = channel_stats(&analytics.samples, &analytics.channels);
+        let hr_stats = add_heart_rate(&analytics, &mut segments);
         Ok(AnalyzedExercise {
             analytics,
             channel_stats,
+            hr_stats,
             segment_mode,
             segments,
         })

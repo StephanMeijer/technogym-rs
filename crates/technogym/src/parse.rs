@@ -344,14 +344,17 @@ pub fn parse_exercise_analytics(data: &Value, analytics_id: &str) -> ExerciseAna
         .collect();
     samples.sort_by_key(|s| s.t);
 
-    let hr = list(&an["hr"])
+    // A strap that lost contact reports -1 or nothing: those are gaps, not readings.
+    let mut hr: Vec<HrSample> = list(&an["hr"])
         .iter()
-        .filter(|h| h.get("hr").is_some())
-        .map(|h| HrSample {
-            t: int_or_null(&h["t"]).unwrap_or(0),
-            hr: int_or_null(&h["hr"]).unwrap_or(0),
+        .filter_map(|h| {
+            Some(HrSample {
+                t: int_or_null(&h["t"]).unwrap_or(0),
+                hr: int_or_null(&h["hr"]).filter(|hr| *hr > 0)?,
+            })
         })
         .collect();
+    hr.sort_by_key(|h| h.t);
 
     let laps = list(&an["laps"])
         .iter()
@@ -390,9 +393,11 @@ pub fn parse_hr_session(data: &Value, session_id: &str, date: &str) -> HrSession
         summary: parse_properties(&d["properties"]),
         hr_samples: list(&d["hrSamples"])
             .iter()
-            .map(|h| HrSessionSample {
-                timestamp: text(&h["timestamp"]),
-                hr: int_or_null(&h["hr"]).unwrap_or(0),
+            .filter_map(|h| {
+                Some(HrSessionSample {
+                    timestamp: text(&h["timestamp"]),
+                    hr: int_or_null(&h["hr"]).filter(|hr| *hr > 0)?,
+                })
             })
             .collect(),
         hr_zones: parse_zones(&d["hrZones"]),

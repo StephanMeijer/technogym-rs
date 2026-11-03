@@ -99,6 +99,26 @@ fn workout_session_keeps_only_performed_exercises() {
 }
 
 #[test]
+fn heart_rate_dropouts_are_gaps_not_readings() {
+    let raw = json!({ "analitics": { "hr": [
+        { "t": 3, "hr": 120 }, { "t": 1, "hr": 118 }, { "t": 2, "hr": -1 },
+        { "t": 4, "hr": null }, { "t": 5, "hr": 0 }, { "t": 6 },
+    ] } });
+    let a = parse_exercise_analytics(&raw, "an");
+    assert_eq!(
+        a.hr.iter().map(|h| (h.t, h.hr)).collect::<Vec<_>>(),
+        vec![(1, 118), (3, 120)],
+        "dropouts removed, sorted by t"
+    );
+    let raw = json!({ "hrSamples": [
+        { "timestamp": "a", "hr": -1 }, { "timestamp": "b", "hr": 99 },
+    ] });
+    let hr = parse_hr_session(&raw, "1", "2026-09-01");
+    assert_eq!(hr.hr_samples.len(), 1);
+    assert_eq!(hr.hr_samples[0].hr, 99);
+}
+
+#[test]
 fn exercise_analytics_maps_channels_by_descriptor_index() {
     let a = parse_exercise_analytics(&fixture("exercise_analytics"), "an-run");
     assert_eq!(a.analytics_id, "an-run");

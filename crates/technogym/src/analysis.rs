@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::types::{AnalyticsSample, HrSample, Lap};
+use crate::types::{AnalyticsSample, ExerciseAnalytics, HrSample, Lap};
 
 /// Channels that accumulate over the exercise: only the final value means anything, not the
 /// average.
@@ -30,6 +30,8 @@ pub const SETPOINT_CHANNELS: &[&str] = &[
 
 /// Setpoint blocks shorter than this are ramps and are folded into the interval they lead into.
 const MIN_INTERVAL_SEC: i64 = 10;
+/// The longest a heart-rate reading holds: a longer gap means the strap dropped out.
+const HR_HOLD_MAX_SEC: i64 = 5;
 
 /// Aggregates of one channel over a span. Measured channels get the time-weighted `avg` and
 /// `min_nonzero` over the non-zero readings (the machine reports 0 while the belt is stopped);
@@ -52,6 +54,20 @@ pub struct ChannelStats {
     /// Last reading, on cumulative channels.
     #[serde(rename = "final", skip_serializing_if = "Option::is_none")]
     pub final_value: Option<f64>,
+}
+
+/// Heart rate over a span, and how much of the span had a reading.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HrStats {
+    /// Time-weighted mean bpm, one decimal.
+    pub avg: f64,
+    /// Lowest reading.
+    pub min: i64,
+    /// Highest reading.
+    pub max: i64,
+    /// Share of the span with a reading, 0 to 1. A reading holds until the next, at most 5 s.
+    pub coverage: f64,
 }
 
 /// A cumulative channel within one segment: the amount covered in it, and its value at the end.
@@ -144,6 +160,9 @@ pub struct Segment {
     pub pace_min_per_km: Option<f64>,
     /// Per-channel aggregates.
     pub channels: BTreeMap<String, SegmentChannel>,
+    /// Heart rate over the segment, when there was any; see [`add_heart_rate`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hr: Option<HrStats>,
 }
 
 /// Options for [`segment_analytics`].
@@ -494,9 +513,61 @@ pub fn segment_analytics(
             lap_distance_m: b.lap_distance_m,
             pace_min_per_km: speed.map(|v| round(60.0 / v, 2)),
             channels,
+            hr: None,
         });
     }
     (mode, segments)
+}
+
+/// Heart rate over the seconds `[lo, hi)`, or `None` without a reading in it. `hr` holds valid
+/// readings only, sorted by `t`, as the parser leaves them.
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "second counts and bpm are far below 2^52"
+)]
+pub fn hr_stats(hr: &[HrSample], lo: i64, hi: i64) -> Option<HrStats> {
+    let mut covered = 0;
+    let mut weighted = 0.0;
+    let (mut min, mut max) = (i64::MAX, i64::MIN);
+    for (i, h) in hr.iter().enumerate() {
+        let next = hr
+            .get(i + 1)
+            .map_or(h.t + 1, |n| n.t)
+            .min(h.t + HR_HOLD_MAX_SEC);
+        let secs = next.min(hi) - h.t.max(lo);
+        if secs <= 0 {
+            continue;
+        }
+        covered += secs;
+        weighted += h.hr as f64 * secs as f64;
+        min = min.min(h.hr);
+        max = max.max(h.hr);
+    }
+    (covered > 0).then(|| HrStats {
+        avg: round(weighted / covered as f64, 1),
+        min,
+        max,
+        coverage: round(covered as f64 / (hi - lo) as f64, 2),
+    })
+}
+
+/// Fills in each segment's heart rate and returns the whole exercise's, from its first to its
+/// last reading of any kind.
+pub fn add_heart_rate(analytics: &ExerciseAnalytics, segments: &mut [Segment]) -> Option<HrStats> {
+    for s in segments.iter_mut() {
+        s.hr = hr_stats(&analytics.hr, s.start_sec + 1, s.end_sec + 1);
+    }
+    let firsts = [
+        analytics.samples.first().map(|s| s.t),
+        analytics.hr.first().map(|h| h.t),
+    ];
+    let lasts = [
+        analytics.samples.last().map(|s| s.t),
+        analytics.hr.last().map(|h| h.t),
+    ];
+    let lo = firsts.into_iter().flatten().min()?;
+    let hi = lasts.into_iter().flatten().max()? + 1;
+    hr_stats(&analytics.hr, lo, hi)
 }
 
 /// Rows with `from_sec <= t <= to_sec`, plus the row still in effect at `from_sec` (its `t` is

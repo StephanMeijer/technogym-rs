@@ -147,7 +147,7 @@ impl Sealer {
         let cipher = Aes256Gcm::new((&self.keys[0]).into());
         let sealed = cipher
             .encrypt(
-                Nonce::from_slice(&nonce),
+                &Nonce::from(nonce),
                 Payload {
                     msg: &plain,
                     aad: purpose.aad(),
@@ -175,11 +175,11 @@ impl Sealer {
         if raw.len() <= 1 + NONCE + TAG || raw[0] != VERSION {
             return None;
         }
-        let nonce = Nonce::from_slice(&raw[1..=NONCE]);
+        let nonce = Nonce::try_from(&raw[1..=NONCE]).ok()?;
         let sealed = &raw[1 + NONCE..];
         for key in &self.keys {
             let Ok(plain) = Aes256Gcm::new(key.into()).decrypt(
-                nonce,
+                &nonce,
                 Payload {
                     msg: sealed,
                     aad: purpose.aad(),
@@ -201,8 +201,7 @@ impl Sealer {
 
     /// A stable keyed pseudonym of a user id, for rate-limit keys and logs.
     pub fn pseudonym(&self, value: &str) -> String {
-        let mut mac =
-            <Hmac<Sha256> as hmac::Mac>::new_from_slice(&self.keys[0]).expect("any key length");
+        let mut mac = Hmac::<Sha256>::new_from_slice(&self.keys[0]).expect("any key length");
         mac.update(b"technogym-user:");
         mac.update(value.as_bytes());
         URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes())
@@ -267,6 +266,16 @@ mod tests {
                 .clone()
                 .replace(&s2.pseudonym("u1"), &s1.pseudonym("u1"))
         );
+    }
+
+    #[test]
+    fn tokens_sealed_by_earlier_releases_still_unseal() {
+        // Sealed at 9f59ddd (aes-gcm 0.10) with key [7u8; 32]: the wire format must not move.
+        let golden = "ARk7DYJ5qpCrOxfwo6NBpJgOuv0OCSOb8zV9cKZy3iyMsp4JLrc_GDSb";
+        let back: Unsealed<serde_json::Value> = Sealer::new(vec![[7u8; 32]])
+            .unseal(Purpose::Access, golden)
+            .unwrap();
+        assert_eq!(back.data["a"], 1);
     }
 
     #[test]

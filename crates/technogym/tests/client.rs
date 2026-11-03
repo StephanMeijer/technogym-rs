@@ -203,6 +203,32 @@ async fn a_rejected_token_without_credentials_is_an_auth_error() {
     );
 }
 
+#[tokio::test]
+async fn an_api_error_that_merely_mentions_a_token_does_not_sign_in_again() {
+    let server = MockServer::start().await;
+    mount_login(&server).await;
+    Mock::given(path(MOVERGY))
+        .respond_with(ResponseTemplate::new(200).set_body_json(
+            json!({ "errors": [{ "details": "InvalidTokenCount", "message": "token count must be positive" }] }),
+        ))
+        .mount(&server)
+        .await;
+    let tg = builder(&server)
+        .credentials(Credentials::new("a@b.c", "pw"))
+        .build();
+    tg.set_session(session("tok-1"));
+    let err = tg.get_movergy().await.unwrap_err();
+    assert!(matches!(err, Error::Api { .. }), "{err}");
+    let logins = server
+        .received_requests()
+        .await
+        .unwrap()
+        .iter()
+        .filter(|r| r.url.path() == LOGIN)
+        .count();
+    assert_eq!(logins, 0, "no renewal for a non-auth error");
+}
+
 /// Rejects `stale`, answers for anything else.
 async fn mount_movergy_rejecting_stale(server: &MockServer) {
     Mock::given(path(MOVERGY))

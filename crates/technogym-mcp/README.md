@@ -11,7 +11,7 @@ access to your Technogym **mywellness** training history. Built on the
 | `get_account_info` | User id, name, culture, facilities and Movergy score. Use it to check the login. |
 | `get_workout_sessions(from_date?, to_date?, only_workouts=true)` | Sessions in a range (default the last 30 days), newest first. |
 | `get_workout_session(session_id, date?, include_raw=false)` | Every exercise with sets, the machine's summary, workload ranges; session efficacy and totals. |
-| `get_recent_workouts(days=14)` | Every session of the last N days, fully loaded. |
+| `get_recent_workouts(days=14)` | `{ days, sessions, omitted, note? }`: the sessions of the last N days, newest first and fully loaded, as many as fit one result. |
 | `get_exercise_analytics(analytics_id, sample_every_seconds=10, segment_by="auto", segment_seconds=300, from_sec=0, to_sec=0, include_raw=false)` | Channel stats, laps, interval segments, the time series and HR. |
 | `get_session_heart_rate(session_id, date?, sample_every_seconds=10)` | The HR trace, zones and avg/min/max HR. |
 

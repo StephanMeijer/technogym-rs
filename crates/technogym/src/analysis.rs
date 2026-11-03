@@ -30,6 +30,10 @@ pub const SETPOINT_CHANNELS: &[&str] = &[
 
 /// Setpoint blocks shorter than this are ramps and are folded into the interval they lead into.
 const MIN_INTERVAL_SEC: i64 = 10;
+/// Channels where 0 is a real setting (a flat belt), not a stopped machine: their zeros count.
+const ZERO_IS_A_READING: &[&str] = &["Grade", "Incline"];
+/// Treadmill speed (km/h) from which the ACSM running equation replaces the walking one.
+const ACSM_RUNNING_KMH: f64 = 8.0;
 /// The longest a heart-rate reading holds: a longer gap means the strap dropped out.
 const HR_HOLD_MAX_SEC: i64 = 5;
 
@@ -68,6 +72,20 @@ pub struct HrStats {
     pub max: i64,
     /// Share of the span with a reading, 0 to 1. A reading holds until the next, at most 5 s.
     pub coverage: f64,
+}
+
+/// Seconds spent moving (`Speed` above 0) per grade band.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GradeBands {
+    /// Below 5 %.
+    #[serde(rename = "below5")]
+    pub below_5: i64,
+    /// 5 % up to 10 %.
+    #[serde(rename = "5to10")]
+    pub from_5_to_10: i64,
+    /// 10 % and steeper.
+    #[serde(rename = "10plus")]
+    pub from_10: i64,
 }
 
 /// A cumulative channel within one segment: the amount covered in it, and its value at the end.
@@ -158,6 +176,16 @@ pub struct Segment {
     /// From the average `Speed` (km/h), when there is one.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pace_min_per_km: Option<f64>,
+    /// Climbed in the segment: the `VDistance` delta, else from speed and positive grade.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub elevation_gain_m: Option<f64>,
+    /// Oxygen cost of the average speed and grade (ACSM walking or running equation), ml/kg/min.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub acsm_vo2: Option<f64>,
+    /// Average heart rate per unit of [`acsm_vo2`](Self::acsm_vo2): falling over weeks at the same
+    /// work means fitter; rising across one steady session is cardiac drift.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hr_per_vo2: Option<f64>,
     /// Per-channel aggregates.
     pub channels: BTreeMap<String, SegmentChannel>,
     /// Heart rate over the segment, when there was any; see [`add_heart_rate`].
@@ -269,7 +297,12 @@ fn stats_of(
         if is_cumulative(ch) {
             entry.final_value = values.last().map(|v| v.0);
         } else {
-            let nonzero: Vec<(f64, i64)> = values.iter().copied().filter(|v| v.0 > 0.0).collect();
+            let zero_counts = ZERO_IS_A_READING.contains(&ch.as_str());
+            let nonzero: Vec<(f64, i64)> = values
+                .iter()
+                .copied()
+                .filter(|v| v.0 > 0.0 || zero_counts)
+                .collect();
             let secs: i64 = nonzero.iter().map(|v| v.1).sum();
             entry.avg = Some(if secs == 0 {
                 0.0
@@ -488,6 +521,11 @@ pub fn segment_analytics(
             continue;
         }
         let speed = stats.get("Speed").and_then(|s| s.avg).filter(|v| *v > 0.0);
+        let grade = stats
+            .get("Grade")
+            .or_else(|| stats.get("Incline"))
+            .and_then(|s| s.avg)
+            .unwrap_or(0.0);
         let channels = stats
             .into_iter()
             .map(|(ch, st)| {
@@ -512,11 +550,95 @@ pub fn segment_analytics(
             lap: b.lap,
             lap_distance_m: b.lap_distance_m,
             pace_min_per_km: speed.map(|v| round(60.0 / v, 2)),
+            elevation_gain_m: elevation_gain(samples, b.start + 1, b.end + 1),
+            acsm_vo2: speed.map(|kmh| acsm_vo2(kmh, grade)),
+            hr_per_vo2: None,
             channels,
             hr: None,
         });
     }
     (mode, segments)
+}
+
+/// ACSM oxygen cost (ml/kg/min) of a treadmill at `kmh` and `grade_pct`: the walking equation
+/// below 8 km/h, the running one from there. Unlike speed x grade it stays meaningful on the flat.
+pub fn acsm_vo2(kmh: f64, grade_pct: f64) -> f64 {
+    let m_per_min = kmh * 1000.0 / 60.0;
+    let grade = grade_pct / 100.0;
+    let vo2 = if kmh < ACSM_RUNNING_KMH {
+        3.5 + 0.1 * m_per_min + 1.8 * m_per_min * grade
+    } else {
+        3.5 + 0.2 * m_per_min + 0.9 * m_per_min * grade
+    };
+    round(vo2, 1)
+}
+
+/// Metres climbed in the seconds `[lo, hi)`: the `VDistance` covered when the machine reports
+/// it, else held speed times positive grade. `None` when neither is there.
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "second counts are far below 2^52"
+)]
+pub fn elevation_gain(samples: &[AnalyticsSample], lo: i64, hi: i64) -> Option<f64> {
+    let reports = |ch: &str| {
+        samples
+            .iter()
+            .any(|r| r.channels.get(ch).copied().flatten().is_some())
+    };
+    if reports("VDistance") {
+        let gain = value_at(samples, "VDistance", hi - 1) - value_at(samples, "VDistance", lo - 1);
+        return Some(round(gain, 1));
+    }
+    let grade_channel = ["Grade", "Incline"].into_iter().find(|ch| reports(ch))?;
+    if !reports("Speed") {
+        return None;
+    }
+    let metres = held(samples, lo, hi)
+        .iter()
+        .filter_map(|(row, secs)| {
+            let kmh = row.channels.get("Speed").copied().flatten()?;
+            let grade = row.channels.get(grade_channel).copied().flatten()?;
+            Some(kmh / 3.6 * *secs as f64 * grade.max(0.0) / 100.0)
+        })
+        .sum::<f64>();
+    Some(round(metres, 1))
+}
+
+/// Metres climbed over the whole exercise; see [`elevation_gain`].
+pub fn exercise_elevation_gain(samples: &[AnalyticsSample]) -> Option<f64> {
+    elevation_gain(samples, 0, samples.last()?.t + 1)
+}
+
+/// Seconds spent moving per grade band over the whole exercise; `None` without a `Grade` or
+/// `Incline` channel.
+pub fn grade_bands(samples: &[AnalyticsSample]) -> Option<GradeBands> {
+    let grade_channel = ["Grade", "Incline"].into_iter().find(|ch| {
+        samples
+            .iter()
+            .any(|r| r.channels.get(*ch).copied().flatten().is_some())
+    })?;
+    let (first, last) = (samples.first()?, samples.last()?);
+    let mut bands = GradeBands::default();
+    for (row, secs) in held(samples, first.t, last.t + 1) {
+        let moving = row
+            .channels
+            .get("Speed")
+            .copied()
+            .flatten()
+            .is_none_or(|s| s > 0.0);
+        let Some(grade) = row.channels.get(grade_channel).copied().flatten() else {
+            continue;
+        };
+        if !moving {
+            continue;
+        }
+        match grade {
+            g if g < 5.0 => bands.below_5 += secs,
+            g if g < 10.0 => bands.from_5_to_10 += secs,
+            _ => bands.from_10 += secs,
+        }
+    }
+    Some(bands)
 }
 
 /// Heart rate over the seconds `[lo, hi)`, or `None` without a reading in it. `hr` holds valid
@@ -556,6 +678,10 @@ pub fn hr_stats(hr: &[HrSample], lo: i64, hi: i64) -> Option<HrStats> {
 pub fn add_heart_rate(analytics: &ExerciseAnalytics, segments: &mut [Segment]) -> Option<HrStats> {
     for s in segments.iter_mut() {
         s.hr = hr_stats(&analytics.hr, s.start_sec + 1, s.end_sec + 1);
+        s.hr_per_vo2 =
+            s.hr.as_ref()
+                .zip(s.acsm_vo2)
+                .map(|(hr, vo2)| round(hr.avg / vo2, 2));
     }
     let firsts = [
         analytics.samples.first().map(|s| s.t),

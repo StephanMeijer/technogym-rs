@@ -40,9 +40,10 @@ mod session;
 mod transport;
 
 pub use analysis::{
-    CUMULATIVE_CHANNELS, ChannelStats, CumulativeDelta, HrStats, SETPOINT_CHANNELS, Segment,
-    SegmentBy, SegmentChannel, SegmentMode, SegmentOptions, add_heart_rate, channel_stats,
-    downsample, hr_stats, sample_every, segment_analytics, window_samples,
+    CUMULATIVE_CHANNELS, ChannelStats, CumulativeDelta, GradeBands, HrStats, SETPOINT_CHANNELS,
+    Segment, SegmentBy, SegmentChannel, SegmentMode, SegmentOptions, acsm_vo2, add_heart_rate,
+    channel_stats, downsample, elevation_gain, exercise_elevation_gain, grade_bands, hr_stats,
+    sample_every, segment_analytics, window_samples,
 };
 pub use client::{AnalyzedExercise, Credentials, Technogym, TechnogymBuilder, is_auth_error};
 pub use error::{Error, Result};

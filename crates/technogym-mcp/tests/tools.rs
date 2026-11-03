@@ -8,6 +8,7 @@ use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock};
 use rmcp::service::{RoleClient, RunningService};
 use serde_json::{Value, json};
 use technogym::{Credentials, FileSessionStore, Session, SessionStore as _};
+use technogym_mcp::results::MAX_RESULT_CHARS;
 use technogym_mcp::{FileSource, LOGIN_HINT, TechnogymMcp};
 use wiremock::matchers::{header, path};
 use wiremock::{Mock, MockServer, Request, ResponseTemplate};
@@ -252,16 +253,26 @@ async fn recent_workouts_stop_at_the_result_budget_and_stay_valid_json() {
         .respond_with(data(&json!({ "items": items })))
         .mount(&server)
         .await;
-    // Roughly a real strength session's size once pretty-printed.
+    // Roughly a real strength session's size once pretty-printed, and spread over thousands of
+    // short lines like the real thing, so the indentation the wrapper adds is not negligible.
     let mut session = fixture("workout_session");
-    session["displayName"] = json!("x".repeat(40_000));
+    session["muscleScores"] = json!(
+        (0..2350)
+            .map(|i| json!({ "muscleName": format!("m{i:04}"), "score": 1 }))
+            .collect::<Vec<_>>()
+    );
     Mock::given(path(format!("{USER}/GetPerformedWorkoutSessionByIdCr")))
         .respond_with(data(&session))
         .mount(&server)
         .await;
     let h = harness(&server, Some(saved_session("tok-1")), None).await;
 
-    let result = parsed(&call(&h, "get_recent_workouts", json!({ "days": 14 })).await);
+    let raw = call(&h, "get_recent_workouts", json!({ "days": 14 })).await;
+    assert!(
+        text(&raw).chars().count() <= MAX_RESULT_CHARS,
+        "the result must never reach truncate"
+    );
+    let result = parsed(&raw);
     let got = result["sessions"].as_array().unwrap().len();
     assert!((1..8).contains(&got), "{got} sessions");
     assert_eq!(result["days"], 14);

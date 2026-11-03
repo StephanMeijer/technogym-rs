@@ -262,7 +262,7 @@ impl TechnogymMcp {
 
     #[tool(
         name = "get_recent_workouts",
-        description = "Every workout session of the last N days, fully loaded (get_workout_sessions + get_workout_session). For splits and time series follow each exercise's analyticsId into get_exercise_analytics.",
+        description = "The workout sessions of the last N days, newest first and fully loaded (get_workout_sessions + get_workout_session), as many as fit one result; omitted says how many older ones were left out. For splits and time series follow each exercise's analyticsId into get_exercise_analytics.",
         annotations(
             title = "Recent workouts",
             read_only_hint = true,
@@ -292,8 +292,9 @@ impl TechnogymMcp {
                 let session = api
                     .get_workout_session(&s.session_id, Some(parse_iso(&s.date)?))
                     .await?;
+                // As it will appear: inside `{ "sessions": [ … ] }` every line is indented 4 more.
                 let size = serde_json::to_string_pretty(&session)
-                    .map_or(0, |t| t.chars().count());
+                    .map_or(0, |t| t.chars().count() + 4 * t.lines().count());
                 if !sessions.is_empty() && used + size > budget {
                     break;
                 }

@@ -17,7 +17,6 @@ struct Cli {
 }
 
 #[derive(Subcommand)]
-#[allow(clippy::doc_markdown)]
 enum Command {
     /// Sign in to mywellness once and save the session (email/password from the environment or the terminal).
     Login,

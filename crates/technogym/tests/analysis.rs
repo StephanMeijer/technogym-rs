@@ -1,4 +1,7 @@
-#![allow(clippy::cast_precision_loss)]
+#![expect(
+    clippy::cast_precision_loss,
+    reason = "test data: small integers as f64"
+)]
 use std::collections::BTreeMap;
 
 use technogym::{

@@ -60,7 +60,6 @@ fn required<'a>(value: Option<&'a String>, name: &str) -> Result<&'a str, ToolEr
 
 /// `get_workout_sessions` arguments.
 #[derive(Debug, Default, Deserialize, schemars::JsonSchema)]
-#[allow(clippy::doc_markdown)]
 pub struct WorkoutSessionsArgs {
     /// Start date, YYYY-MM-DD (default: 30 days before to_date).
     #[serde(default)]
@@ -75,7 +74,6 @@ pub struct WorkoutSessionsArgs {
 
 /// `get_workout_session` arguments.
 #[derive(Debug, Default, Deserialize, schemars::JsonSchema)]
-#[allow(clippy::doc_markdown)]
 pub struct WorkoutSessionArgs {
     /// session_id from get_workout_sessions.
     #[serde(default)]
@@ -90,7 +88,6 @@ pub struct WorkoutSessionArgs {
 
 /// `get_recent_workouts` arguments.
 #[derive(Debug, Default, Deserialize, schemars::JsonSchema)]
-#[allow(clippy::doc_markdown)]
 pub struct RecentWorkoutsArgs {
     /// Look-back window in days, 1-365 (default 14).
     #[serde(default)]
@@ -99,7 +96,6 @@ pub struct RecentWorkoutsArgs {
 
 /// `get_exercise_analytics` arguments.
 #[derive(Debug, Default, Deserialize, schemars::JsonSchema)]
-#[allow(clippy::doc_markdown)]
 pub struct ExerciseAnalyticsArgs {
     /// An exercise's analyticsId from get_workout_session.
     #[serde(default)]
@@ -126,7 +122,6 @@ pub struct ExerciseAnalyticsArgs {
 
 /// `get_session_heart_rate` arguments.
 #[derive(Debug, Default, Deserialize, schemars::JsonSchema)]
-#[allow(clippy::doc_markdown)]
 pub struct SessionHeartRateArgs {
     /// session_id from get_workout_sessions.
     #[serde(default)]

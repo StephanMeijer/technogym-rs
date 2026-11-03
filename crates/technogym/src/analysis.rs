@@ -183,7 +183,10 @@ fn is_cumulative(channel: &str) -> bool {
     CUMULATIVE_CHANNELS.contains(&channel)
 }
 
-#[allow(clippy::cast_precision_loss)]
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "sample counts are far below 2^52"
+)]
 fn stats_of(samples: &[&AnalyticsSample], channels: &[String]) -> BTreeMap<String, ChannelStats> {
     let mut stats = BTreeMap::new();
     for ch in channels {
@@ -255,7 +258,11 @@ struct Block {
 /// Maximal runs of constant setpoint. The machine ramps between setpoints over a few seconds,
 /// producing 1-2 s blocks; those merge into the following interval so it includes its own
 /// acceleration. Fewer than two intervals is not an interval workout: returns `[]`.
-#[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "setpoints in tenths round-trip exactly through i64"
+)]
 fn workload_bounds(samples: &[AnalyticsSample], channels: &[String]) -> Vec<Bound> {
     let keys: Vec<&str> = SETPOINT_CHANNELS
         .iter()
@@ -333,7 +340,10 @@ fn workload_bounds(samples: &[AnalyticsSample], channels: &[String]) -> Vec<Boun
 /// Splits an exercise into segments and aggregates every channel per segment. Cumulative
 /// channels report the distance (or calories, MOVEs) covered within the segment. A segment
 /// covers samples with `start_sec < t <= end_sec`.
-#[allow(clippy::cast_possible_truncation)]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "lap times are whole seconds"
+)]
 pub fn segment_analytics(
     samples: &[AnalyticsSample],
     channels: &[String],

@@ -1,3 +1,7 @@
+#![expect(
+    clippy::doc_markdown,
+    reason = "tool and CLI docs are MCP schema and clap help text read by a model, not rustdoc"
+)]
 //! `technogym-mcp`: the MCP server on stdio (default), `login`, `logout`, or `serve-http`.
 
 use std::sync::Arc;

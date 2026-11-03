@@ -1,5 +1,9 @@
 #![warn(missing_docs)]
 #![expect(
+    clippy::doc_markdown,
+    reason = "tool and CLI docs are MCP schema and clap help text read by a model, not rustdoc"
+)]
+#![expect(
     clippy::unused_async_trait_impl,
     reason = "rmcp's and axum's traits are async whether or not a method awaits"
 )]

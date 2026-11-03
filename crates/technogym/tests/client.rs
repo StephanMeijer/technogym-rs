@@ -154,6 +154,26 @@ async fn services_posts_to_the_facility_with_the_bearer_token() {
 }
 
 #[tokio::test]
+async fn a_given_http_client_is_the_one_requests_go_through() {
+    let server = MockServer::start().await;
+    Mock::given(path(MOVERGY))
+        .and(header("x-test", "1"))
+        .respond_with(ok(&json!({ "movergy": 1.0 })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let mut defaults = reqwest::header::HeaderMap::new();
+    defaults.insert("x-test", "1".parse().unwrap());
+    let http = reqwest::Client::builder()
+        .default_headers(defaults)
+        .build()
+        .unwrap();
+    let tg = builder(&server).http_client(http).build();
+    tg.set_session(session("tok-1"));
+    assert_eq!(tg.get_movergy().await.unwrap(), Some(1.0));
+}
+
+#[tokio::test]
 async fn envelope_without_data_is_returned_whole_and_api_errors_are_typed() {
     let server = MockServer::start().await;
     Mock::given(path("/my-gym/x/Whole"))

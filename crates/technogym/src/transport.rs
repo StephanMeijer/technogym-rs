@@ -38,11 +38,8 @@ pub(crate) struct Fetcher {
 }
 
 impl Fetcher {
-    pub(crate) fn new(options: TransportOptions) -> Self {
-        Self {
-            http: reqwest::Client::new(),
-            options,
-        }
+    pub(crate) fn new(http: reqwest::Client, options: TransportOptions) -> Self {
+        Self { http, options }
     }
 
     /// POSTs `body` as JSON. With `retry`, a network error or a retryable status is tried again

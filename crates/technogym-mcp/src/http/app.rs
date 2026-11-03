@@ -132,6 +132,8 @@ pub struct Hosted {
     pub limits: Limits,
     /// Stops in-flight MCP work on shutdown.
     pub cancel: CancellationToken,
+    /// One connection pool for every mywellness call this process makes.
+    http: reqwest::Client,
     base_urls: Option<(String, String)>,
 }
 
@@ -144,6 +146,7 @@ impl Hosted {
             sealer,
             limits: Limits::default(),
             cancel: CancellationToken::new(),
+            http: reqwest::Client::new(),
             base_urls: None,
         }
     }
@@ -166,7 +169,7 @@ impl Hosted {
 
     /// A mywellness client builder.
     pub fn client(&self) -> TechnogymBuilder {
-        let b = Technogym::builder();
+        let b = Technogym::builder().http_client(self.http.clone());
         match &self.base_urls {
             Some((core, services)) => b.core_url(core.clone()).services_url(services.clone()),
             None => b,

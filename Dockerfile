@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # ─ Builder ─
-FROM rust:1-alpine AS builder
+FROM rust:1-alpine@sha256:7e9e2d068a107a2adafd19930011178d14a78326053cd4c3a9f7ad3fd049557d AS builder
 
 RUN apk add --no-cache musl-dev
 
@@ -15,7 +15,7 @@ RUN cargo build -p technogym-mcp --release --locked && \
   cp target/release/technogym-mcp /out/technogym-mcp
 
 # ─ Runtime ─
-FROM alpine:3
+FROM alpine:3@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a
 
 # The binary is dynamically linked against musl. The runtime base MUST stay
 # Alpine-compatible (any image shipping the matching musl loader). Do not change

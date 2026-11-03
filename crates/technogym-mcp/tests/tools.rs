@@ -218,6 +218,20 @@ async fn every_tool_answers_over_a_saved_session() {
     );
     assert_eq!(hr["sampleCount"], 2);
     assert_eq!(hr["hrSamples"][1]["hr"], 101);
+
+    let requests = server.received_requests().await.unwrap();
+    let hits = |suffix: &str| {
+        requests
+            .iter()
+            .filter(|r| r.url.path().ends_with(suffix))
+            .count()
+    };
+    assert_eq!(
+        hits("GetPerformedWorkoutSessionByIdCr"),
+        1,
+        "include_raw must not fetch the session twice"
+    );
+    assert_eq!(hits("an-run/Details"), 2, "one per analytics call");
 }
 
 #[tokio::test]

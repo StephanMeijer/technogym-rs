@@ -9,6 +9,7 @@ use rmcp::{ErrorData as McpError, ServerHandler, schemars, tool, tool_handler, t
 use serde::Deserialize;
 use serde_json::{Value, json};
 use technogym::dates::{add_days, parse_iso, to_iso, today};
+use technogym::parse::{parse_exercise_analytics, parse_workout_session};
 use technogym::{
     SegmentBy, SegmentOptions, Technogym, channel_stats, downsample, segment_analytics,
     window_samples,
@@ -243,10 +244,11 @@ impl TechnogymMcp {
                 Some(d) => d,
                 None => api.find_session_date(id, 365).await?,
             };
-            let mut value = serde_json::to_value(api.get_workout_session(id, Some(day)).await?)
-                .unwrap_or(Value::Null);
+            let raw = api.get_workout_session_raw(id, Some(day)).await?;
+            let mut value =
+                serde_json::to_value(parse_workout_session(&raw, id)).unwrap_or(Value::Null);
             if args.include_raw.unwrap_or(false) {
-                value["raw"] = api.get_workout_session_raw(id, Some(day)).await?;
+                value["raw"] = raw;
             }
             Ok(json_result(&value))
         })
@@ -298,7 +300,8 @@ impl TechnogymMcp {
             let from_sec = args.from_sec.unwrap_or(0);
             let to_sec = args.to_sec.unwrap_or(0);
 
-            let analytics = api.get_exercise_analytics(id).await?;
+            let mut raw = api.get_exercise_analytics_raw(id).await?;
+            let analytics = parse_exercise_analytics(&raw, id);
             let options = SegmentOptions { segment_by, segment_seconds: args.segment_seconds };
             let (mode, segments) = segment_analytics(&analytics.samples, &analytics.channels, &analytics.laps, options);
             let stats = channel_stats(&analytics.samples, &analytics.channels);
@@ -317,7 +320,6 @@ impl TechnogymMcp {
                 value["window"] = json!({ "fromSec": from_sec, "toSec": if to_sec == 0 { Value::Null } else { json!(to_sec) } });
             }
             if args.include_raw.unwrap_or(false) {
-                let mut raw = api.get_exercise_analytics_raw(id).await?;
                 if let Some(count) = raw["analitics"]["samples"].as_array().map(Vec::len) {
                     raw["analitics"]["samples"] = json!(format!("<{count} samples omitted; see samples>"));
                 }

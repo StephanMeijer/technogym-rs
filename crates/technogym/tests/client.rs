@@ -83,6 +83,10 @@ async fn login_sends_app_headers_and_saves_the_session() {
         json!({ "username": "a@b.c", "password": "pw", "keepMeLoggedIn": true })
     );
     assert_eq!(req.headers.get("x-mwapps-client").unwrap(), "enduserweb");
+    assert_eq!(
+        req.headers.get("x-mwapps-clientversion").unwrap(),
+        technogym::constants::CLIENT_VERSION
+    );
 }
 
 #[tokio::test]

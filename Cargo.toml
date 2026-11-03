@@ -33,9 +33,9 @@ clap = { version = "4.5", features = ["derive", "env"] }
 axum = { version = "0.8", default-features = false, features = ["http1", "tokio", "form", "json", "query"] }
 tower = { version = "0.5", features = ["util"] }
 tracing-subscriber = { version = "0.3", default-features = false, features = ["env-filter", "fmt"] }
-aes-gcm = "0.10"
-sha2 = "0.10"
-hmac = "0.12"
+aes-gcm = "0.11"
+sha2 = "0.11"
+hmac = "0.13"
 base64 = "0.22"
 rand = "0.9"
 url = "2"

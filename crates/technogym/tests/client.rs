@@ -115,6 +115,33 @@ async fn login_failures_are_auth_errors() {
 }
 
 #[tokio::test]
+async fn a_failed_login_does_not_keep_the_credentials_for_renewal() {
+    let server = MockServer::start().await;
+    Mock::given(path(LOGIN))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(json!({ "errors": [{ "errorMessage": "Wrong password" }] })),
+        )
+        .mount(&server)
+        .await;
+    let tg = builder(&server).build();
+    assert!(tg.login("a@b.c", "wrong").await.is_err());
+    let err = tg.get_movergy().await.unwrap_err();
+    assert!(
+        matches!(&err, Error::Auth(m) if m.contains("not signed in")),
+        "{err}"
+    );
+    let logins = server
+        .received_requests()
+        .await
+        .unwrap()
+        .iter()
+        .filter(|r| r.url.path() == LOGIN)
+        .count();
+    assert_eq!(logins, 1, "the rejected password is not tried again");
+}
+
+#[tokio::test]
 async fn login_is_never_retried() {
     let server = MockServer::start().await;
     Mock::given(path(LOGIN))

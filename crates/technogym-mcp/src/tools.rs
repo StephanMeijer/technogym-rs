@@ -289,9 +289,14 @@ impl TechnogymMcp {
             let mut sessions = vec![];
             let mut used = 0;
             for s in &summaries {
-                let session = api
+                let mut session = api
                     .get_workout_session(&s.session_id, Some(parse_iso(&s.date)?))
                     .await?;
+                // Machine limits (65535 kcal and the like) repeat on every exercise and say
+                // nothing about the workout; get_workout_session still has them.
+                for e in &mut session.exercises {
+                    e.workload_ranges.clear();
+                }
                 // As it will appear: inside `{ "sessions": [ … ] }` every line is indented 4 more.
                 let size = serde_json::to_string_pretty(&session)
                     .map_or(0, |t| t.chars().count() + 4 * t.lines().count());

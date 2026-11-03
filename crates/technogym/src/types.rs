@@ -205,7 +205,8 @@ pub struct Exercise {
     pub progress: Option<i64>,
     /// Prescribed or estimated figures.
     pub estimated: Estimated,
-    /// Allowed ranges per property.
+    /// Allowed ranges per property; left out when empty.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub workload_ranges: BTreeMap<String, WorkloadRange>,
     /// Non-empty console `extData`, with the `mwc_` prefix removed.
     pub ext_data: BTreeMap<String, Value>,

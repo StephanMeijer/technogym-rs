@@ -177,6 +177,10 @@ async fn every_tool_answers_over_a_saved_session() {
     );
     assert_eq!(session["exercises"].as_array().unwrap().len(), 2);
     assert_eq!(session["raw"]["id"], "ws-1");
+    assert_eq!(
+        session["exercises"][0]["workloadRanges"]["IsoWeight"]["max"],
+        100
+    );
 
     let analytics = call(
         &h,
@@ -278,6 +282,10 @@ async fn recent_workouts_stop_at_the_result_budget_and_stay_valid_json() {
     assert!((1..8).contains(&got), "{got} sessions");
     assert_eq!(result["days"], 14);
     assert_eq!(result["omitted"], 8 - got);
+    assert!(
+        !text(&raw).contains("workloadRanges"),
+        "machine limits are left out of recent workouts"
+    );
     assert!(
         result["note"]
             .as_str()

@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3](https://github.com/StephanMeijer/technogym-rs/compare/v0.1.2...v0.1.3) - 2026-11-03
+
+### Added
+
+- *(mcp)* add weekly training trends tool
+- *(technogym)* elevation, grade bands and heart rate per unit of work
+
+### Fixed
+
+- *(technogym)* drop heart-rate dropouts and report coverage
+
+### Other
+
+- Merge pull request #30 from StephanMeijer/fix/recent-without-workload-ranges
+
 ## [0.1.2](https://github.com/StephanMeijer/technogym-rs/compare/v0.1.1...v0.1.2) - 2026-11-03
 
 ### Fixed

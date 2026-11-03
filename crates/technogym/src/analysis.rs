@@ -2,6 +2,9 @@
 //! stats and interval / lap / window segments. Pure functions, no HTTP. The mywellness summary
 //! block omits most machine channels (`RunningCadence` and `RunningPower` on a Skillrun, for one),
 //! so these fill that gap.
+//!
+//! Samples are change-driven: the machine sends a row when a value changes, and that value holds
+//! until the next row. Every aggregate here is weighted by the seconds a value held, not by rows.
 
 use std::collections::BTreeMap;
 
@@ -28,15 +31,18 @@ pub const SETPOINT_CHANNELS: &[&str] = &[
 /// Setpoint blocks shorter than this are ramps and are folded into the interval they lead into.
 const MIN_INTERVAL_SEC: i64 = 10;
 
-/// Aggregates of one channel. Measured channels get `avg` and `min_nonzero` over the non-zero
-/// readings (the machine reports 0 while the belt is stopped); cumulative channels get `final`.
+/// Aggregates of one channel over a span. Measured channels get the time-weighted `avg` and
+/// `min_nonzero` over the non-zero readings (the machine reports 0 while the belt is stopped);
+/// cumulative channels get `final`.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChannelStats {
     /// The largest reading.
     pub max: f64,
-    /// How many numeric readings there were.
+    /// How many readings were in effect during the span.
     pub samples: usize,
+    /// Seconds of the span the channel had a reading.
+    pub seconds: i64,
     /// Mean of the non-zero readings, one decimal.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub avg: Option<f64>,
@@ -51,7 +57,7 @@ pub struct ChannelStats {
 /// A cumulative channel within one segment: the amount covered in it, and its value at the end.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct CumulativeDelta {
-    /// Covered within the segment.
+    /// Covered within the segment, interpolated at its bounds.
     pub delta: f64,
     /// Value at the segment's end.
     pub end: f64,
@@ -172,43 +178,89 @@ fn round(n: f64, digits: i32) -> f64 {
     (n * f).round() / f
 }
 
-fn numbers(samples: &[&AnalyticsSample], channel: &str) -> Vec<f64> {
+/// Each row with the seconds of `[lo, hi)` it holds for: from its `t` until the next row's (the
+/// last row: one second). Rows holding for no second of the span are left out.
+fn held(samples: &[AnalyticsSample], lo: i64, hi: i64) -> Vec<(&AnalyticsSample, i64)> {
     samples
         .iter()
-        .filter_map(|row| row.channels.get(channel).copied().flatten())
+        .enumerate()
+        .filter_map(|(i, row)| {
+            let next = samples.get(i + 1).map_or(row.t + 1, |n| n.t);
+            let secs = next.min(hi) - row.t.max(lo);
+            (secs > 0).then_some((row, secs))
+        })
         .collect()
+}
+
+/// A cumulative channel's value at second `t`: linear between the readings around it, from 0 at
+/// `t = 0`, and the last reading after the last one.
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "second offsets are far below 2^52"
+)]
+fn value_at(samples: &[AnalyticsSample], channel: &str, t: i64) -> f64 {
+    let t = t.max(0);
+    let mut prev = (0, 0.0);
+    for row in samples {
+        let Some(v) = row.channels.get(channel).copied().flatten() else {
+            continue;
+        };
+        if row.t >= t {
+            if row.t == prev.0 {
+                return v;
+            }
+            return prev.1 + (v - prev.1) * (t - prev.0) as f64 / (row.t - prev.0) as f64;
+        }
+        prev = (row.t, v);
+    }
+    prev.1
 }
 
 fn is_cumulative(channel: &str) -> bool {
     CUMULATIVE_CHANNELS.contains(&channel)
 }
 
+/// Time-weighted aggregates of every channel over the seconds `[lo, hi)`.
 #[expect(
     clippy::cast_precision_loss,
-    reason = "sample counts are far below 2^52"
+    reason = "second counts are far below 2^52"
 )]
-fn stats_of(samples: &[&AnalyticsSample], channels: &[String]) -> BTreeMap<String, ChannelStats> {
+fn stats_of(
+    samples: &[AnalyticsSample],
+    lo: i64,
+    hi: i64,
+    channels: &[String],
+) -> BTreeMap<String, ChannelStats> {
+    let rows = held(samples, lo, hi);
     let mut stats = BTreeMap::new();
     for ch in channels {
-        let values = numbers(samples, ch);
+        let values: Vec<(f64, i64)> = rows
+            .iter()
+            .filter_map(|(row, secs)| Some((row.channels.get(ch).copied().flatten()?, *secs)))
+            .collect();
         if values.is_empty() {
             continue;
         }
         let mut entry = ChannelStats {
-            max: values.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+            max: values.iter().map(|v| v.0).fold(f64::NEG_INFINITY, f64::max),
             samples: values.len(),
+            seconds: values.iter().map(|v| v.1).sum(),
             ..ChannelStats::default()
         };
         if is_cumulative(ch) {
-            entry.final_value = values.last().copied();
+            entry.final_value = values.last().map(|v| v.0);
         } else {
-            let nonzero: Vec<f64> = values.iter().copied().filter(|v| *v > 0.0).collect();
-            entry.avg = Some(if nonzero.is_empty() {
+            let nonzero: Vec<(f64, i64)> = values.iter().copied().filter(|v| v.0 > 0.0).collect();
+            let secs: i64 = nonzero.iter().map(|v| v.1).sum();
+            entry.avg = Some(if secs == 0 {
                 0.0
             } else {
-                round(nonzero.iter().sum::<f64>() / nonzero.len() as f64, 1)
+                round(
+                    nonzero.iter().map(|(v, s)| v * *s as f64).sum::<f64>() / secs as f64,
+                    1,
+                )
             });
-            entry.min_nonzero = Some(nonzero.iter().copied().fold(f64::INFINITY, f64::min))
+            entry.min_nonzero = Some(nonzero.iter().map(|v| v.0).fold(f64::INFINITY, f64::min))
                 .filter(|m| m.is_finite())
                 .or(Some(0.0));
         }
@@ -217,13 +269,15 @@ fn stats_of(samples: &[&AnalyticsSample], channels: &[String]) -> BTreeMap<Strin
     stats
 }
 
-/// Per-channel aggregates over `samples`. Channels with no numeric reading are left out.
+/// Per-channel aggregates over the whole exercise. Channels with no numeric reading are left out.
 pub fn channel_stats(
     samples: &[AnalyticsSample],
     channels: &[String],
 ) -> BTreeMap<String, ChannelStats> {
-    let refs: Vec<&AnalyticsSample> = samples.iter().collect();
-    stats_of(&refs, channels)
+    let (Some(first), Some(last)) = (samples.first(), samples.last()) else {
+        return BTreeMap::new();
+    };
+    stats_of(samples, first.t, last.t + 1, channels)
 }
 
 struct Bound {
@@ -283,11 +337,17 @@ fn workload_bounds(samples: &[AnalyticsSample], channels: &[String]) -> Vec<Boun
         let s = sig(row);
         match blocks.last_mut() {
             Some(last) if last.sig == s => last.end = row.t,
-            _ => blocks.push(Block {
-                sig: s,
-                start: row.t,
-                end: row.t,
-            }),
+            _ => {
+                // A setpoint holds until the next change, not just until its own last row.
+                if let Some(last) = blocks.last_mut() {
+                    last.end = row.t - 1;
+                }
+                blocks.push(Block {
+                    sig: s,
+                    start: row.t,
+                    end: row.t,
+                });
+            }
         }
     }
 
@@ -338,8 +398,9 @@ fn workload_bounds(samples: &[AnalyticsSample], channels: &[String]) -> Vec<Boun
 }
 
 /// Splits an exercise into segments and aggregates every channel per segment. Cumulative
-/// channels report the distance (or calories, MOVEs) covered within the segment. A segment
-/// covers samples with `start_sec < t <= end_sec`.
+/// channels report the distance (or calories, MOVEs) covered within the segment, interpolated at
+/// its bounds so consecutive segments add up to the whole. A segment covers the seconds
+/// `start_sec < t <= end_sec`, including a value that started before it and still holds.
 #[expect(
     clippy::cast_possible_truncation,
     reason = "lap times are whole seconds"
@@ -403,24 +464,19 @@ pub fn segment_analytics(
 
     let mut segments = vec![];
     for b in bounds {
-        let rows: Vec<&AnalyticsSample> = samples
-            .iter()
-            .filter(|r| b.start < r.t && r.t <= b.end)
-            .collect();
-        if rows.is_empty() {
+        let stats = stats_of(samples, b.start + 1, b.end + 1, channels);
+        if stats.is_empty() {
             continue;
         }
-        let stats = stats_of(&rows, channels);
         let speed = stats.get("Speed").and_then(|s| s.avg).filter(|v| *v > 0.0);
         let channels = stats
             .into_iter()
             .map(|(ch, st)| {
                 let entry = if is_cumulative(&ch) {
-                    let vals = numbers(&rows, &ch);
-                    let (first, last) = (vals[0], vals[vals.len() - 1]);
+                    let end = value_at(samples, &ch, b.end);
                     SegmentChannel::Cumulative(CumulativeDelta {
-                        delta: round(last - first, 2),
-                        end: last,
+                        delta: round(end - value_at(samples, &ch, b.start), 2),
+                        end: round(end, 2),
                     })
                 } else {
                     SegmentChannel::Stats(st)
@@ -443,16 +499,38 @@ pub fn segment_analytics(
     (mode, segments)
 }
 
-/// Rows with `from_sec <= t <= to_sec`; `to_sec` of 0 or less means no upper bound.
+/// Rows with `from_sec <= t <= to_sec`, plus the row still in effect at `from_sec` (its `t` is
+/// earlier); `to_sec` of 0 or less means no upper bound.
 pub fn window_samples<T: Timed + Clone>(rows: &[T], from_sec: i64, to_sec: i64) -> Vec<T> {
     let lo = from_sec.max(0);
-    rows.iter()
-        .filter(|r| r.t() >= lo && (to_sec <= 0 || r.t() <= to_sec))
+    let start = rows.iter().rposition(|r| r.t() <= lo).unwrap_or(0);
+    rows[start.min(rows.len())..]
+        .iter()
+        .filter(|r| to_sec <= 0 || r.t() <= to_sec)
         .cloned()
         .collect()
 }
 
-/// Every `step`th row, starting with the first.
+/// The rows in effect at every `step`th second from the first row's `t`, each at most once and
+/// with its own `t`: a change-driven series thinned by time, not by row count.
+pub fn sample_every<T: Timed + Clone>(rows: &[T], step: usize) -> Vec<T> {
+    let Some(first) = rows.first().map(Timed::t) else {
+        return vec![];
+    };
+    // Capped so the arithmetic below cannot overflow; no exercise lasts 2^31 s.
+    let step = i64::try_from(step).unwrap_or(i64::MAX).clamp(1, 1 << 31);
+    rows.iter()
+        .enumerate()
+        .filter(|(i, row)| {
+            let next = rows.get(i + 1).map_or(row.t() + 1, Timed::t);
+            let grid = first + (row.t() - first + step - 1).div_euclid(step) * step;
+            grid < next
+        })
+        .map(|(_, row)| row.clone())
+        .collect()
+}
+
+/// Every `step`th row, starting with the first, for rows without a time offset.
 pub fn downsample<T: Clone>(rows: &[T], step: usize) -> Vec<T> {
     let n = step.max(1);
     rows.iter().step_by(n).cloned().collect()

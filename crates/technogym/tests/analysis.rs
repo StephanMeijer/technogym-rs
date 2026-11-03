@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 
 use technogym::{
     AnalyticsSample, HrSample, Lap, SegmentBy, SegmentChannel, SegmentMode, SegmentOptions,
-    channel_stats, downsample, segment_analytics, window_samples,
+    channel_stats, downsample, sample_every, segment_analytics, window_samples,
 };
 
 fn sample(t: i64, speed: f64, grade: f64, dist: f64) -> AnalyticsSample {
@@ -86,8 +86,8 @@ fn intervals_are_detected_from_setpoint_changes_and_ramps_fold_forward() {
     assert_eq!(segments[0].pace_min_per_km, Some(6.0));
     match &segments[1].channels["HDistance"] {
         SegmentChannel::Cumulative(d) => assert!(
-            (d.delta - (12.0 / 3.6 + 60.0 * 14.0 / 3.6)).abs() < 0.01,
-            "last minus first sample of the segment"
+            (d.delta - (2.0 * 12.0 / 3.6 + 60.0 * 14.0 / 3.6)).abs() < 0.01,
+            "every second of the segment, its first one included"
         ),
         SegmentChannel::Stats(_) => panic!("cumulative channel"),
     }
@@ -171,6 +171,105 @@ fn window_and_downsample() {
         vec![0, 4, 8]
     );
     assert_eq!(downsample(&hr, 0).len(), 10);
+    assert_eq!(
+        sample_every(&hr, 4).iter().map(|h| h.t).collect::<Vec<_>>(),
+        vec![0, 4, 8],
+        "on 1 Hz rows, seconds and rows agree"
+    );
+}
+
+/// Change-driven rows: a reading only when something changes.
+fn sparse(rows: &[(i64, i64)]) -> Vec<HrSample> {
+    rows.iter().map(|&(t, hr)| HrSample { t, hr }).collect()
+}
+
+#[test]
+fn sampling_and_windows_go_by_seconds_on_change_driven_rows() {
+    let hr = sparse(&[(0, 100), (1, 101), (2, 102), (30, 130), (31, 131)]);
+    assert_eq!(
+        sample_every(&hr, 10)
+            .iter()
+            .map(|h| h.t)
+            .collect::<Vec<_>>(),
+        vec![0, 2, 30],
+        "t=10 and t=20 are still the reading from t=2, sent once"
+    );
+    assert_eq!(
+        window_samples(&hr, 10, 30)
+            .iter()
+            .map(|h| h.t)
+            .collect::<Vec<_>>(),
+        vec![2, 30],
+        "the reading in effect at from_sec comes along"
+    );
+    assert_eq!(sample_every(&hr, usize::MAX).len(), 1);
+}
+
+#[test]
+fn averages_and_distances_hold_values_until_the_next_row() {
+    // 10 km/h for 90 s, then 20 km/h for 10 s: rows only at the changes.
+    let samples = vec![
+        sample(1, 10.0, 0.0, 2.8),
+        sample(91, 20.0, 0.0, 250.0),
+        sample(100, 20.0, 0.0, 300.0),
+    ];
+    let stats = channel_stats(&samples, &channels());
+    assert_eq!(stats["Speed"].seconds, 100);
+    assert_eq!(
+        stats["Speed"].avg,
+        Some(11.0),
+        "90 s at 10 and 10 s at 20, not the row mean of 16.7"
+    );
+
+    // 40 s windows: the first has one row, the second none at all.
+    let opts = SegmentOptions {
+        segment_by: SegmentBy::Fixed,
+        segment_seconds: Some(40),
+    };
+    let (_, segments) = segment_analytics(&samples, &channels(), &[], opts);
+    assert_eq!(
+        segments.len(),
+        3,
+        "a window with no row still has a held speed"
+    );
+    assert_eq!(segments[1].pace_min_per_km, Some(6.0));
+    let total: f64 = segments
+        .iter()
+        .map(|s| match &s.channels["HDistance"] {
+            SegmentChannel::Cumulative(d) => d.delta,
+            SegmentChannel::Stats(_) => panic!("cumulative channel"),
+        })
+        .sum();
+    assert!(
+        (total - 300.0).abs() < 0.05,
+        "segments add up to the whole distance, got {total}"
+    );
+}
+
+#[test]
+fn an_interval_lasts_until_the_next_setpoint_change() {
+    // Two rows per interval: the setpoint changes at 1, 61 and 121.
+    let samples = vec![
+        sample(1, 10.0, 0.0, 3.0),
+        sample(2, 10.0, 0.0, 6.0),
+        sample(61, 14.0, 0.0, 170.0),
+        sample(62, 14.0, 0.0, 174.0),
+        sample(121, 10.0, 0.0, 400.0),
+        sample(180, 10.0, 0.0, 560.0),
+    ];
+    let (mode, segments) = segment_analytics(&samples, &channels(), &[], SegmentOptions::default());
+    assert_eq!(
+        mode,
+        SegmentMode::Workload,
+        "not folded away as short ramps"
+    );
+    assert_eq!(
+        segments
+            .iter()
+            .map(|s| (s.start_sec, s.end_sec))
+            .collect::<Vec<_>>(),
+        vec![(0, 60), (60, 120), (120, 180)]
+    );
 }
 
 #[test]

@@ -326,7 +326,7 @@ pub fn parse_exercise_analytics(data: &Value, analytics_id: &str) -> ExerciseAna
         .collect();
     let channels = channel_by_index.values().cloned().collect();
 
-    let samples = list(&an["samples"])
+    let mut samples: Vec<AnalyticsSample> = list(&an["samples"])
         .iter()
         .filter_map(|raw| {
             let vs = list(&raw["vs"]);
@@ -342,6 +342,7 @@ pub fn parse_exercise_analytics(data: &Value, analytics_id: &str) -> ExerciseAna
             })
         })
         .collect();
+    samples.sort_by_key(|s| s.t);
 
     let hr = list(&an["hr"])
         .iter()

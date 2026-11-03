@@ -392,7 +392,12 @@ async fn rate_limits_and_http_errors_are_typed() {
         .respond_with(ResponseTemplate::new(403))
         .mount(&server)
         .await;
-    let tg = builder(&server).build();
+    let tg = builder(&server)
+        .transport(TransportOptions {
+            retries: 0,
+            ..TransportOptions::default()
+        })
+        .build();
     tg.set_session(session("tok-1"));
     let err = tg.get_movergy().await.unwrap_err();
     assert!(
@@ -415,6 +420,41 @@ async fn rate_limits_and_http_errors_are_typed() {
     );
     let err = tg.services("/x/Forbidden", json!({})).await.unwrap_err();
     assert!(matches!(err, Error::Auth(_)), "{err}");
+}
+
+#[tokio::test]
+async fn a_rate_limit_with_a_short_retry_after_is_waited_out() {
+    let server = MockServer::start().await;
+    Mock::given(path(MOVERGY))
+        .respond_with(ResponseTemplate::new(429).insert_header("retry-after", "0"))
+        .up_to_n_times(1)
+        .mount(&server)
+        .await;
+    Mock::given(path(MOVERGY))
+        .respond_with(ok(&json!({ "movergy": 5 })))
+        .mount(&server)
+        .await;
+    let tg = builder(&server).build();
+    tg.set_session(session("tok-1"));
+    assert_eq!(tg.get_movergy().await.unwrap(), Some(5.0));
+    assert_eq!(server.received_requests().await.unwrap().len(), 2);
+
+    // A wait longer than the cap, or no Retry-After at all, is reported, not slept on.
+    let server = MockServer::start().await;
+    Mock::given(path(MOVERGY))
+        .respond_with(ResponseTemplate::new(429).insert_header("retry-after", "3600"))
+        .mount(&server)
+        .await;
+    let tg = builder(&server).build();
+    tg.set_session(session("tok-1"));
+    assert!(matches!(
+        tg.get_movergy().await.unwrap_err(),
+        Error::RateLimit {
+            retry_after: Some(3600),
+            ..
+        }
+    ));
+    assert_eq!(server.received_requests().await.unwrap().len(), 1);
 }
 
 #[tokio::test]

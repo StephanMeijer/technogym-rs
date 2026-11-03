@@ -9,6 +9,8 @@ use serde_json::Value;
 use crate::error::{Error, Result};
 
 const RETRY_STATUSES: &[u16] = &[408, 500, 502, 503, 504];
+/// The longest a `Retry-After` is honoured; anything above becomes an [`Error::RateLimit`].
+const MAX_RETRY_AFTER: Duration = Duration::from_secs(60);
 
 /// Timeout, retries and backoff for every request.
 #[derive(Clone, Debug)]
@@ -43,7 +45,8 @@ impl Fetcher {
     }
 
     /// POSTs `body` as JSON. With `retry`, a network error or a retryable status is tried again
-    /// up to `retries` times; the login POST passes `false`.
+    /// up to `retries` times, and a 429 after its `Retry-After` (when it is at most
+    /// [`MAX_RETRY_AFTER`]); the login POST passes `false`.
     pub(crate) async fn post_json(
         &self,
         url: &str,
@@ -90,18 +93,34 @@ impl Fetcher {
                 attempt += 1;
                 continue;
             }
+            if can_retry
+                && status == StatusCode::TOO_MANY_REQUESTS
+                && let Some(wait) = retry_after(&res).map(Duration::from_secs)
+                && wait <= MAX_RETRY_AFTER
+            {
+                tracing::debug!(url = %safe_url, attempt, wait_s = wait.as_secs(), "rate limited, waiting");
+                tokio::time::sleep(wait).await;
+                attempt += 1;
+                continue;
+            }
             return Err(to_error(res, status, safe_url).await);
         }
     }
 }
 
+/// `Retry-After` in seconds, when the response carries one as a number.
+fn retry_after(res: &Response) -> Option<u64> {
+    res.headers()
+        .get(RETRY_AFTER)
+        .and_then(|v| v.to_str().ok()?.trim().parse().ok())
+}
+
 async fn to_error(res: Response, status: StatusCode, url: String) -> Error {
     if status == StatusCode::TOO_MANY_REQUESTS {
-        let retry_after = res
-            .headers()
-            .get(RETRY_AFTER)
-            .and_then(|v| v.to_str().ok()?.trim().parse().ok());
-        return Error::RateLimit { url, retry_after };
+        return Error::RateLimit {
+            url,
+            retry_after: retry_after(&res),
+        };
     }
     if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
         return Error::Auth(format!("not authorized for {url} ({status})"));

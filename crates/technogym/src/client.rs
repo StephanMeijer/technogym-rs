@@ -254,12 +254,20 @@ impl Technogym {
         TechnogymBuilder::default()
     }
 
-    /// Signs in with email and password and saves the session to the store. The credentials are
-    /// kept in memory so a rejected token can be renewed without asking again.
+    /// Signs in with email and password and saves the session to the store. Credentials that
+    /// worked are kept in memory so a rejected token can be renewed without asking again;
+    /// credentials that failed are forgotten.
     pub async fn login(&self, email: &str, password: &str) -> Result<Session> {
-        self.state.lock().expect("state").credentials = Some(Credentials::new(email, password));
+        let credentials = Credentials::new(email, password);
         let _guard = self.sign_in_lock.lock().await;
-        self.sign_in().await
+        let session = self.login_request(&credentials).await?;
+        {
+            let mut state = self.state.lock().expect("state");
+            state.credentials = Some(credentials);
+            state.session = Some(session.clone());
+        }
+        self.store.save(&session).await?;
+        Ok(session)
     }
 
     /// Loads the saved session. `false` when the store holds none.

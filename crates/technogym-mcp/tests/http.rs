@@ -13,6 +13,8 @@ use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use serde_json::{Value, json};
 use sha2::{Digest as _, Sha256};
 use technogym_mcp::http::app::{Hosted, HostedConfig, router};
+use technogym_mcp::http::oauth::TokenPayload;
+use technogym_mcp::http::seal::{Purpose, Sealer};
 use tower::ServiceExt as _;
 use wiremock::matchers::{header as header_is, method, path};
 use wiremock::{Mock, MockServer, Request as MockRequest, ResponseTemplate};
@@ -212,6 +214,10 @@ async fn metadata_and_health() {
         assert_eq!(m["issuer"], "http://localhost:3000");
         assert_eq!(m["token_endpoint"], "http://localhost:3000/mcp/oauth/token");
         assert_eq!(m["code_challenge_methods_supported"], json!(["S256"]));
+        assert!(
+            m.get("revocation_endpoint").is_none(),
+            "revoke is a no-op, so it must not be advertised"
+        );
     }
     let (_, _, body) = send(&app, get("/.well-known/oauth-protected-resource/mcp")).await;
     assert_eq!(json_of(&body)["resource"], "http://localhost:3000/mcp");
@@ -421,6 +427,10 @@ async fn the_full_flow_signs_in_exchanges_the_code_and_serves_mcp() {
     assert_eq!(tokens["expires_in"], 1200);
     let access = tokens["access_token"].as_str().unwrap().to_string();
     let refresh = tokens["refresh_token"].as_str().unwrap().to_string();
+    let unsealed = Sealer::new(vec![[9u8; 32]])
+        .unseal::<TokenPayload>(Purpose::Refresh, &refresh)
+        .unwrap();
+    assert!(unsealed.exp.is_some(), "a refresh token expires");
 
     // /mcp with the bearer: initialize and list tools, then call one.
     let mcp = |body: Value, token: &str| {

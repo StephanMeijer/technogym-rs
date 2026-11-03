@@ -25,7 +25,7 @@ POST /mcp/oauth/register                              dynamic client registratio
 GET  /mcp/oauth/authorize                             sign-in page
 POST /mcp/oauth/signin                                the form
 POST /mcp/oauth/token                                 code (PKCE S256) and refresh grants
-POST /mcp/oauth/revoke                                accepted, no-op (see below)
+POST /mcp/oauth/revoke                                accepted, no-op, not advertised (see below)
 POST /mcp                                             the MCP endpoint (Bearer required)
 ```
 
@@ -74,6 +74,7 @@ user's login come from here.
 Every user's mywellness traffic, logins included, leaves from one server IP. The client headers
 mimic Technogym's own web app, so a change on their side breaks sign-in for everyone at once.
 
-Codes and refresh tokens are not single-use (no grant store): a code replayed within its 60 s
-lifetime mints a second token pair for the same client. Fine for a server you host for yourself
-and people you know; add a grant store before hosting for strangers.
+Codes are not single-use (no grant store): a code replayed within its 60 s lifetime mints a
+second token pair for the same client. A refresh token lives 24 hours from the last refresh, so a
+connector left idle must sign in again. Fine for a server you host for yourself and people you
+know; add a grant store before hosting for strangers.

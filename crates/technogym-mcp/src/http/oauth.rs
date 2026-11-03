@@ -6,9 +6,9 @@
 //! last 20 minutes, so a client in use refreshes well inside mywellness's hour. After an hour with
 //! no refresh the mywellness token is gone: the refresh fails and the user reconnects.
 //!
-//! shortcut: codes and refresh tokens are not single-use (there is no grant store), and nothing
-//! revokes one connection. Rotate `SEAL_KEYS` to revoke everyone. Add a store if this is ever
-//! hosted for strangers.
+//! shortcut: codes are not single-use (there is no grant store), and nothing revokes one
+//! connection before its refresh token expires. Rotate `SEAL_KEYS` to revoke everyone. Add a
+//! store if this is ever hosted for strangers.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -33,6 +33,9 @@ use super::seal::{Purpose, now};
 
 /// Well inside the one hour a mywellness token lives, so a refresh renews it before it expires.
 pub const ACCESS_TTL_S: u64 = 20 * 60;
+/// How long a refresh token stays exchangeable; each refresh issues a new one, so only an idle
+/// connector hits it.
+pub const REFRESH_TTL_S: u64 = 24 * 60 * 60;
 /// How long an authorization code may be exchanged.
 pub const CODE_TTL_S: u64 = 60;
 /// How long the sign-in page stays valid.
@@ -104,12 +107,10 @@ pub async fn authorization_server_metadata(State(h): State<Arc<Hosted>>) -> Json
         "authorization_endpoint": h.url("/mcp/oauth/authorize"),
         "token_endpoint": h.url("/mcp/oauth/token"),
         "registration_endpoint": h.url("/mcp/oauth/register"),
-        "revocation_endpoint": h.url("/mcp/oauth/revoke"),
         "response_types_supported": ["code"],
         "grant_types_supported": ["authorization_code", "refresh_token"],
         "code_challenge_methods_supported": ["S256"],
         "token_endpoint_auth_methods_supported": ["client_secret_basic", "client_secret_post", "none"],
-        "revocation_endpoint_auth_methods_supported": ["client_secret_basic", "client_secret_post", "none"],
     }))
 }
 
@@ -461,7 +462,7 @@ fn issue(h: &Hosted, client_id: &str, session: Session) -> Response {
             "access_token": h.sealer.seal(Purpose::Access, &payload, Some(ACCESS_TTL_S)),
             "token_type": "bearer",
             "expires_in": ACCESS_TTL_S,
-            "refresh_token": h.sealer.seal(Purpose::Refresh, &payload, None),
+            "refresh_token": h.sealer.seal(Purpose::Refresh, &payload, Some(REFRESH_TTL_S)),
         })),
     )
         .into_response()
@@ -575,8 +576,9 @@ pub async fn token(
     }
 }
 
-/// `POST /mcp/oauth/revoke`: accepted and ignored. Tokens are stateless; rotating `SEAL_KEYS`
-/// revokes everyone.
+/// `POST /mcp/oauth/revoke`: accepted and ignored, and for that reason not advertised in the
+/// metadata. Tokens are stateless: a refresh token dies at [`REFRESH_TTL_S`], and rotating
+/// `SEAL_KEYS` revokes everyone.
 pub async fn revoke() -> StatusCode {
     StatusCode::OK
 }

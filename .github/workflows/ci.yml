@@ -16,7 +16,7 @@ jobs:
   # pedantic group moves between releases, so a second leg there reports churn.
   test:
     name: test (${{ matrix.toolchain }})
-    runs-on: ubuntu-latest
+    runs-on: 9xx
     strategy:
       # "stable green, MSRV red" is a different diagnosis from "both red".
       fail-fast: false
@@ -40,7 +40,7 @@ jobs:
       - run: cargo test --workspace --locked
 
   clippy:
-    runs-on: ubuntu-latest
+    runs-on: 9xx
     permissions:
       contents: read
     steps:
@@ -54,7 +54,7 @@ jobs:
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
   fmt:
-    runs-on: ubuntu-latest
+    runs-on: 9xx
     permissions:
       contents: read
     steps:
@@ -84,7 +84,7 @@ jobs:
   # so an unused entry is compiled by every downstream consumer. Renovate bumps the
   # action SHA but cannot see `tool:`, so the cargo-machete version moves by hand.
   machete:
-    runs-on: ubuntu-latest
+    runs-on: 9xx
     permissions:
       contents: read
     steps:
@@ -94,13 +94,15 @@ jobs:
       - uses: taiki-e/install-action@v2.87.19
         with:
           tool: cargo-machete@0.9.2
+      # The 9xx runner ships rustup with no toolchain; cargo needs one.
+      - run: rustup default stable
       - run: cargo machete
 
   # Dry-run `cargo package`: release-plz packages each crate on its own, and a crate
   # that only compiles because a sibling switched a shared feature on is a failure
   # nothing else catches.
   package:
-    runs-on: ubuntu-latest
+    runs-on: 9xx
     permissions:
       contents: read
     steps:
@@ -116,7 +118,7 @@ jobs:
   # advisory database cannot be pinned; the tool and the database's source are.
   # Keep the cargo-deny version in step with advisories.yml.
   advisories:
-    runs-on: ubuntu-latest
+    runs-on: 9xx
     timeout-minutes: 10
     permissions:
       contents: read
@@ -127,6 +129,8 @@ jobs:
       - uses: taiki-e/install-action@v2.87.19
         with:
           tool: cargo-deny@0.20.2
+      # The 9xx runner ships rustup with no toolchain; cargo needs one.
+      - run: rustup default stable
       - run: cargo deny --locked check advisories
 
   # Dry-run Dockerfile build on every push and PR: catches breakage before
@@ -249,7 +253,7 @@ jobs:
       && github.ref == 'refs/heads/main'
       && github.repository == 'StephanMeijer/technogym-rs'
       && contains(fromJSON('["success", "failure"]'), needs.release-plz-release.result)
-    runs-on: ubuntu-latest
+    runs-on: 9xx
     permissions:
       contents: write
       pull-requests: write

@@ -16,7 +16,9 @@ jobs:
   # pedantic group moves between releases, so a second leg there reports churn.
   test:
     name: test (${{ matrix.toolchain }})
-    runs-on: 9xx
+    # Fork PRs stay on GitHub-hosted runners: the public repo auto-runs returning
+    # contributors' PRs, and cargo runs their build scripts. Push and same-repo PRs use 9xx.
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || '9xx' }}
     strategy:
       # "stable green, MSRV red" is a different diagnosis from "both red".
       fail-fast: false
@@ -40,7 +42,7 @@ jobs:
       - run: cargo test --workspace --locked
 
   clippy:
-    runs-on: 9xx
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || '9xx' }}
     permissions:
       contents: read
     steps:
@@ -54,7 +56,7 @@ jobs:
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
   fmt:
-    runs-on: 9xx
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || '9xx' }}
     permissions:
       contents: read
     steps:
@@ -84,7 +86,7 @@ jobs:
   # so an unused entry is compiled by every downstream consumer. Renovate bumps the
   # action SHA but cannot see `tool:`, so the cargo-machete version moves by hand.
   machete:
-    runs-on: 9xx
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || '9xx' }}
     permissions:
       contents: read
     steps:
@@ -102,7 +104,7 @@ jobs:
   # that only compiles because a sibling switched a shared feature on is a failure
   # nothing else catches.
   package:
-    runs-on: 9xx
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || '9xx' }}
     permissions:
       contents: read
     steps:
@@ -118,7 +120,7 @@ jobs:
   # advisory database cannot be pinned; the tool and the database's source are.
   # Keep the cargo-deny version in step with advisories.yml.
   advisories:
-    runs-on: 9xx
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || '9xx' }}
     timeout-minutes: 10
     permissions:
       contents: read

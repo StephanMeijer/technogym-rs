@@ -6,12 +6,16 @@
 //! last 20 minutes, so a client in use refreshes well inside mywellness's hour. After an hour with
 //! no refresh the mywellness token is gone: the refresh fails and the user reconnects.
 //!
-//! shortcut: codes are not single-use (there is no grant store), and nothing revokes one
+//! Codes are single-use: the one piece of state is [`UsedCodes`], held in memory for the 60 s a
+//! code lives.
+//!
+//! shortcut: a restart within those 60 s forgets which codes were used, and several instances
+//! would each keep their own set; share a store if this ever runs as a fleet. Nothing revokes one
 //! connection before its refresh token expires. Rotate `SEAL_KEYS` to revoke everyone. Add a
 //! store if this is ever hosted for strangers.
 
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use axum::extract::{Form, Query, State};
 use axum::http::{HeaderMap, StatusCode, header};
@@ -79,6 +83,21 @@ pub struct TokenPayload {
     pub client_id: String,
     /// The mywellness session.
     pub session: Session,
+}
+
+/// The authorization codes already exchanged, by SHA-256, until they would have expired anyway.
+#[derive(Debug, Default)]
+pub struct UsedCodes(Mutex<HashMap<[u8; 32], u64>>);
+
+impl UsedCodes {
+    /// Marks `code` (valid until `exp`) as used; `false` when it already was.
+    pub fn consume(&self, code: &str, exp: u64, now: u64) -> bool {
+        let mut used = self.0.lock().expect("used codes");
+        // Only codes from the last CODE_TTL_S are kept, so this stays small.
+        used.retain(|_, e| *e > now);
+        used.insert(Sha256::digest(code.as_bytes()).into(), exp)
+            .is_none()
+    }
 }
 
 fn oauth_error(status: StatusCode, error: &str, description: impl Into<String>) -> Response {
@@ -483,6 +502,63 @@ fn issue(h: &Hosted, client_id: &str, session: Session) -> Response {
         .into_response()
 }
 
+/// The `authorization_code` grant: PKCE-checked, and each code only once.
+fn exchange_code(h: &Hosted, client_id: &str, form: &HashMap<String, String>) -> Response {
+    let get = |k: &str| form.get(k).map(String::as_str).filter(|v| !v.is_empty());
+    let Some((code, unsealed)) = get("code").and_then(|c| {
+        h.sealer
+            .unseal::<CodePayload>(Purpose::Code, c)
+            .map(|u| (c, u))
+    }) else {
+        return oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_grant",
+            "The authorization code is invalid or has expired",
+        );
+    };
+    let payload = unsealed.data;
+    if payload.client_id != client_id {
+        return oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_grant",
+            "The authorization code was issued to another client",
+        );
+    }
+    if get("redirect_uri").is_some_and(|r| r != payload.redirect_uri) {
+        return oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_grant",
+            "redirect_uri does not match the authorization request",
+        );
+    }
+    let Some(verifier) = get("code_verifier") else {
+        return oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "code_verifier is required",
+        );
+    };
+    if URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes())) != payload.code_challenge {
+        return oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_grant",
+            "code_verifier does not match the code_challenge",
+        );
+    }
+    // Last, so a failed attempt never burns a good code.
+    // One clock for the expiry and the purge, so a test clock cannot let a replay through.
+    let now = h.sealer.now();
+    let exp = unsealed.exp.unwrap_or(now + CODE_TTL_S);
+    if !h.used_codes.consume(code, exp, now) {
+        return oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_grant",
+            "The authorization code has already been used",
+        );
+    }
+    issue(h, client_id, payload.session)
+}
+
 /// `POST /mcp/oauth/token`: exchanges a code (with PKCE) or a refresh token for tokens.
 pub async fn token(
     State(h): State<Arc<Hosted>>,
@@ -503,48 +579,7 @@ pub async fn token(
     };
     let get = |k: &str| form.get(k).map(String::as_str).filter(|v| !v.is_empty());
     match get("grant_type") {
-        Some("authorization_code") => {
-            let Some(payload) = get("code")
-                .and_then(|c| h.sealer.unseal::<CodePayload>(Purpose::Code, c))
-                .map(|u| u.data)
-            else {
-                return oauth_error(
-                    StatusCode::BAD_REQUEST,
-                    "invalid_grant",
-                    "The authorization code is invalid or has expired",
-                );
-            };
-            if payload.client_id != client_id {
-                return oauth_error(
-                    StatusCode::BAD_REQUEST,
-                    "invalid_grant",
-                    "The authorization code was issued to another client",
-                );
-            }
-            if get("redirect_uri").is_some_and(|r| r != payload.redirect_uri) {
-                return oauth_error(
-                    StatusCode::BAD_REQUEST,
-                    "invalid_grant",
-                    "redirect_uri does not match the authorization request",
-                );
-            }
-            let Some(verifier) = get("code_verifier") else {
-                return oauth_error(
-                    StatusCode::BAD_REQUEST,
-                    "invalid_request",
-                    "code_verifier is required",
-                );
-            };
-            if URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes())) != payload.code_challenge
-            {
-                return oauth_error(
-                    StatusCode::BAD_REQUEST,
-                    "invalid_grant",
-                    "code_verifier does not match the code_challenge",
-                );
-            }
-            issue(&h, &client_id, payload.session)
-        }
+        Some("authorization_code") => exchange_code(&h, &client_id, &form),
         Some("refresh_token") => {
             let Some(payload) = get("refresh_token")
                 .and_then(|t| h.sealer.unseal::<TokenPayload>(Purpose::Refresh, t))
@@ -609,4 +644,19 @@ pub fn bearer_payload(h: &Hosted, headers: &HeaderMap) -> Option<TokenPayload> {
     h.sealer
         .unseal::<TokenPayload>(Purpose::Access, token)
         .map(|u| u.data)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::UsedCodes;
+
+    #[test]
+    fn a_code_is_consumed_once_and_forgotten_after_it_expires() {
+        let used = UsedCodes::default();
+        assert!(used.consume("a", 160, 100));
+        assert!(!used.consume("a", 160, 120), "a replay is refused");
+        assert!(used.consume("b", 170, 120), "another code is its own");
+        assert!(used.consume("c", 260, 165), "expired entries are dropped");
+        assert_eq!(used.0.lock().unwrap().len(), 2, "only b and c are kept");
+    }
 }

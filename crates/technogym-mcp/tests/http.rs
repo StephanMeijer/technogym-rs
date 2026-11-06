@@ -448,6 +448,25 @@ async fn the_full_flow_signs_in_exchanges_the_code_and_serves_mcp() {
     let tokens = json_of(&body);
     assert_eq!(tokens["token_type"], "bearer");
     assert_eq!(tokens["expires_in"], 1200);
+    // A code works once: replaying it mints nothing.
+    let (status, _, body) = send(
+        &app,
+        post_form(
+            "/mcp/oauth/token",
+            &[
+                ("grant_type", "authorization_code"),
+                ("client_id", &flow.client_id),
+                ("client_secret", &flow.client_secret),
+                ("code", &code),
+                ("code_verifier", &flow.verifier),
+            ],
+        ),
+    )
+    .await;
+    assert_eq!(
+        (status, json_of(&body)["error"].as_str()),
+        (StatusCode::BAD_REQUEST, Some("invalid_grant"))
+    );
     let access = tokens["access_token"].as_str().unwrap().to_string();
     let refresh = tokens["refresh_token"].as_str().unwrap().to_string();
     let unsealed = Sealer::new(vec![[9u8; 32]])

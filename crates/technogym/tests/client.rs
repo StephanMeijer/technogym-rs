@@ -673,3 +673,61 @@ async fn a_refused_connection_is_retried_and_then_a_connection_error() {
         other => panic!("expected a connection error, got {other:?}"),
     }
 }
+
+#[tokio::test]
+async fn a_session_without_a_date_is_found_in_history_and_recent_workouts_load_whole() {
+    use technogym::dates::{add_days, to_partition_key, today};
+    let server = MockServer::start().await;
+    Mock::given(path("/my-gym/Training/User/u1/ActivityHistory"))
+        .respond_with(ok(&fixture("activity_history")))
+        .mount(&server)
+        .await;
+    Mock::given(path(
+        "/my-gym/Training/User/u1/GetPerformedWorkoutSessionByIdCr",
+    ))
+    .respond_with(ok(&fixture("workout_session")))
+    .mount(&server)
+    .await;
+    let tg = builder(&server).build();
+    tg.set_session(session("tok-1"));
+    let body = |req: &Request| req.body_json::<serde_json::Value>().unwrap();
+
+    // Without a date, the last year of every activity type is scanned for the session.
+    let ws = tg.get_workout_session("1002", None).await.unwrap();
+    assert_eq!(ws.session_id, "1002");
+    let requests = server.received_requests().await.unwrap();
+    let scan = body(&requests[0]);
+    assert_eq!(scan["endDay"], to_partition_key(today()));
+    assert_eq!(scan["startDay"], to_partition_key(add_days(today(), -365)));
+    assert!(scan.get("justThisType").is_none(), "every activity type");
+    assert_eq!(
+        body(&requests[1]),
+        json!({ "idCr": 1002, "partitionDate": "20260903" }),
+        "the date comes from the matching history item"
+    );
+    assert!(matches!(
+        tg.get_workout_session("9999", None).await.unwrap_err(),
+        Error::NotFound(m) if m.contains("9999") && m.contains("365 days")
+    ));
+
+    // Recent workouts: one list call, then one detail call per session, newest first.
+    let seen = server.received_requests().await.unwrap().len();
+    let recent = tg.get_recent_workouts(7).await.unwrap();
+    assert_eq!(
+        recent
+            .iter()
+            .map(|s| s.session_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["1002", "1001"]
+    );
+    let requests = server.received_requests().await.unwrap();
+    let calls: Vec<serde_json::Value> = requests[seen..].iter().map(body).collect();
+    assert_eq!(calls.len(), 3);
+    assert_eq!(calls[0]["justThisType"], "WorkoutSession");
+    assert_eq!(
+        calls[0]["startDay"],
+        to_partition_key(add_days(today(), -7))
+    );
+    assert_eq!(calls[1]["idCr"], 1002);
+    assert_eq!(calls[2]["idCr"], 1001);
+}

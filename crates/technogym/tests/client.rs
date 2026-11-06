@@ -744,6 +744,69 @@ async fn logout_during_a_lazy_sign_in_wins() {
     assert!(store.load().await.unwrap().is_none(), "nor saved a session");
 }
 
+#[tokio::test]
+async fn logout_while_a_rotated_token_is_saved_wins() {
+    let server = MockServer::start().await;
+    Mock::given(path(MOVERGY))
+        .respond_with(ok(&json!({ "movergy": 1 })).insert_header("authorization", "Bearer tok-9"))
+        .mount(&server)
+        .await;
+    let store = Arc::new(MemorySessionStore::default());
+    let saving = Arc::new(tokio::sync::Notify::new());
+    let release = Arc::new(tokio::sync::Notify::new());
+    let tg = builder(&server)
+        .session_store(GatedStore {
+            inner: store.clone(),
+            saving: saving.clone(),
+            release: release.clone(),
+        })
+        .build();
+    tg.set_session(session("tok-1"));
+    let (read, logout, ()) = tokio::join!(
+        tg.get_movergy(),
+        async {
+            saving.notified().await;
+            tg.logout().await
+        },
+        async {
+            saving.notified().await;
+            // Give the logout time to run before the save is let through.
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            release.notify_one();
+        }
+    );
+    read.unwrap();
+    logout.unwrap();
+    assert!(tg.session().is_none());
+    assert!(
+        store.load().await.unwrap().is_none(),
+        "the late save did not bring the session back"
+    );
+}
+
+/// A store whose `save` waits until the test lets it through.
+struct GatedStore {
+    inner: Arc<MemorySessionStore>,
+    saving: Arc<tokio::sync::Notify>,
+    release: Arc<tokio::sync::Notify>,
+}
+
+#[async_trait::async_trait]
+impl SessionStore for GatedStore {
+    async fn load(&self) -> technogym::Result<Option<Session>> {
+        self.inner.load().await
+    }
+    async fn save(&self, session: &Session) -> technogym::Result<()> {
+        // Two waiters (the logout and the releaser) each need to hear it.
+        self.saving.notify_waiters();
+        self.release.notified().await;
+        self.inner.save(session).await
+    }
+    async fn clear(&self) -> technogym::Result<()> {
+        self.inner.clear().await
+    }
+}
+
 /// Lets a test keep a handle on the store the client owns.
 struct SharedStore(Arc<MemorySessionStore>);
 

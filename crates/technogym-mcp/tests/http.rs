@@ -48,9 +48,14 @@ async fn mywellness() -> MockServer {
         .await;
     Mock::given(path(MOVERGY))
         .respond_with(|req: &MockRequest| {
-            if req.headers.get("authorization").unwrap() == "Bearer dead" {
+            let bearer = req.headers.get("authorization").unwrap();
+            if bearer == "Bearer dead" {
                 ResponseTemplate::new(200)
                     .set_body_json(json!({ "errors": [{ "details": "TokenExpired" }] }))
+            } else if bearer == "Bearer broken" {
+                // Not an auth error: mywellness itself is unwell.
+                ResponseTemplate::new(200)
+                    .set_body_json(json!({ "errors": [{ "details": "ServiceUnavailable" }] }))
             } else {
                 ResponseTemplate::new(200)
                     .set_body_json(json!({ "data": { "movergy": 42 } }))
@@ -650,4 +655,171 @@ async fn failed_sign_ins_are_limited_per_ip() {
         .filter(|r| r.url.path() == LOGIN)
         .count();
     assert_eq!(logins, 5, "the sixth try never reached mywellness");
+}
+
+/// A sealed refresh token for `client_id` whose mywellness session token is `token`.
+fn refresh_token_for(client_id: &str, token: &str) -> String {
+    Sealer::new(vec![[9u8; 32]]).seal(
+        Purpose::Refresh,
+        &json!({ "client_id": client_id, "session": { "token": token, "user": { "userId": "u1", "facilities": [{ "url": "my-gym" }] } } }),
+        None,
+    )
+}
+
+/// A token request that must be refused: why, the form, and the expected status and error.
+type Rejection<'a> = (&'a str, Vec<(&'a str, &'a str)>, StatusCode, &'a str);
+
+#[tokio::test]
+async fn the_token_endpoint_rejects_every_bad_grant() {
+    let server = mywellness().await;
+    let app = app(&server);
+    let flow = start_flow(&app, "https://claude.ai/api/mcp/auth_callback", "none").await;
+    let other = start_flow(&app, "https://claude.ai/api/mcp/auth_callback", "none").await;
+    let (status, headers, _) = send(
+        &app,
+        post_form(
+            "/mcp/oauth/signin",
+            &[
+                ("request", &flow.request),
+                ("email", "a@b.c"),
+                ("password", "right"),
+            ],
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    let code = query_of(&headers["location"])["code"].clone();
+    let refresh = refresh_token_for(&flow.client_id, "tok-1");
+    let broken = refresh_token_for(&flow.client_id, "broken");
+
+    let cases: Vec<Rejection> = vec![
+        (
+            "a code that never was",
+            vec![
+                ("grant_type", "authorization_code"),
+                ("client_id", &flow.client_id),
+                ("code", "garbage"),
+                ("code_verifier", &flow.verifier),
+            ],
+            StatusCode::BAD_REQUEST,
+            "invalid_grant",
+        ),
+        (
+            "a code issued to another client",
+            vec![
+                ("grant_type", "authorization_code"),
+                ("client_id", &other.client_id),
+                ("code", &code),
+                ("code_verifier", &flow.verifier),
+            ],
+            StatusCode::BAD_REQUEST,
+            "invalid_grant",
+        ),
+        (
+            "a redirect_uri that was not in the authorization request",
+            vec![
+                ("grant_type", "authorization_code"),
+                ("client_id", &flow.client_id),
+                ("code", &code),
+                ("redirect_uri", "https://claude.ai/other"),
+                ("code_verifier", &flow.verifier),
+            ],
+            StatusCode::BAD_REQUEST,
+            "invalid_grant",
+        ),
+        (
+            "no code_verifier",
+            vec![
+                ("grant_type", "authorization_code"),
+                ("client_id", &flow.client_id),
+                ("code", &code),
+            ],
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+        ),
+        (
+            "a refresh token that never was",
+            vec![
+                ("grant_type", "refresh_token"),
+                ("client_id", &flow.client_id),
+                ("refresh_token", "garbage"),
+            ],
+            StatusCode::BAD_REQUEST,
+            "invalid_grant",
+        ),
+        (
+            "a refresh token issued to another client",
+            vec![
+                ("grant_type", "refresh_token"),
+                ("client_id", &other.client_id),
+                ("refresh_token", &refresh),
+            ],
+            StatusCode::BAD_REQUEST,
+            "invalid_grant",
+        ),
+        (
+            "a refresh while mywellness is unwell",
+            vec![
+                ("grant_type", "refresh_token"),
+                ("client_id", &flow.client_id),
+                ("refresh_token", &broken),
+            ],
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "server_error",
+        ),
+        (
+            "a client that never registered",
+            vec![
+                ("grant_type", "authorization_code"),
+                ("client_id", "not-a-client"),
+                ("code", &code),
+                ("code_verifier", &flow.verifier),
+            ],
+            StatusCode::UNAUTHORIZED,
+            "invalid_client",
+        ),
+        (
+            "an unsupported grant type",
+            vec![("grant_type", "password"), ("client_id", &flow.client_id)],
+            StatusCode::BAD_REQUEST,
+            "unsupported_grant_type",
+        ),
+    ];
+    for (case, fields, expected_status, expected_error) in cases {
+        let (status, _, body) = send(&app, post_form("/mcp/oauth/token", &fields)).await;
+        assert_eq!(
+            (status, json_of(&body)["error"].as_str()),
+            (expected_status, Some(expected_error)),
+            "{case}: {}",
+            String::from_utf8_lossy(&body)
+        );
+    }
+    // The same code and refresh token are still good for their own client.
+    let (status, _, body) = send(
+        &app,
+        post_form(
+            "/mcp/oauth/token",
+            &[
+                ("grant_type", "authorization_code"),
+                ("client_id", &flow.client_id),
+                ("code", &code),
+                ("code_verifier", &flow.verifier),
+            ],
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    let (status, _, body) = send(
+        &app,
+        post_form(
+            "/mcp/oauth/token",
+            &[
+                ("grant_type", "refresh_token"),
+                ("client_id", &flow.client_id),
+                ("refresh_token", &refresh),
+            ],
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
 }

@@ -641,3 +641,35 @@ impl SessionStore for SharedStore {
         self.0.clear().await
     }
 }
+
+#[tokio::test]
+async fn a_refused_connection_is_retried_and_then_a_connection_error() {
+    // A port that was bound a moment ago and is closed now: every attempt is refused at once.
+    let port = std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
+    let dead = format!("http://127.0.0.1:{port}");
+    let tg = Technogym::builder()
+        .core_url(dead.clone())
+        .services_url(dead.clone())
+        .transport(TransportOptions {
+            retries: 2,
+            backoff: Duration::ZERO,
+            ..TransportOptions::default()
+        })
+        .build();
+    tg.set_session(session("tok-1"));
+    match tg.get_movergy().await.unwrap_err() {
+        Error::Connection { url, attempts, .. } => {
+            assert_eq!(attempts, 3, "two retries, then the error");
+            assert_eq!(url, format!("{dead}{MOVERGY}"));
+        }
+        other => panic!("expected a connection error, got {other:?}"),
+    }
+    match tg.login("a@b.c", "pw").await.unwrap_err() {
+        Error::Connection { attempts, .. } => assert_eq!(attempts, 1, "login is never retried"),
+        other => panic!("expected a connection error, got {other:?}"),
+    }
+}

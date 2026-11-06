@@ -712,6 +712,38 @@ async fn logout_clears_the_session_and_the_store() {
     assert!(!tg.load_session().await.unwrap());
 }
 
+#[tokio::test]
+async fn logout_during_a_lazy_sign_in_wins() {
+    let server = MockServer::start().await;
+    Mock::given(path(LOGIN))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(fixture("login"))
+                .set_delay(Duration::from_millis(300)),
+        )
+        .mount(&server)
+        .await;
+    Mock::given(path(MOVERGY))
+        .respond_with(ok(&json!({ "movergy": 7 })))
+        .mount(&server)
+        .await;
+    let store = Arc::new(MemorySessionStore::default());
+    let tg = builder(&server)
+        .credentials(Credentials::new("a@b.c", "pw"))
+        .session_store(SharedStore(store.clone()))
+        .build();
+    let (_, logout) = tokio::join!(tg.get_movergy(), async {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        tg.logout().await
+    });
+    logout.unwrap();
+    assert!(
+        tg.session().is_none(),
+        "the late sign-in did not log back in"
+    );
+    assert!(store.load().await.unwrap().is_none(), "nor saved a session");
+}
+
 /// Lets a test keep a handle on the store the client owns.
 struct SharedStore(Arc<MemorySessionStore>);
 

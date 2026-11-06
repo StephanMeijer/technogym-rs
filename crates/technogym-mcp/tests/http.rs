@@ -306,6 +306,21 @@ async fn authorize_rejects_bad_clients_and_redirects_other_errors() {
     assert_eq!(q["error"], "invalid_request");
     assert!(q["error_description"].contains("code_challenge"));
     assert_eq!(q["state"], "s1");
+
+    // A registered but untrusted redirect gets the error as a page, never a redirect: with open
+    // registration, redirecting errors would make this server an open redirector.
+    let evil = start_flow(&app, "https://evil.example/cb", "none").await;
+    let (status, headers, body) = send(
+        &app,
+        get(&format!(
+            "/mcp/oauth/authorize?client_id={}&response_type=token",
+            url_encode(&evil.client_id)
+        )),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(!headers.contains_key("location"), "{headers:?}");
+    assert!(String::from_utf8_lossy(&body).contains("response_type must be code"));
 }
 
 #[tokio::test]

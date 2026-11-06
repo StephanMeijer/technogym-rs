@@ -201,7 +201,7 @@ impl Hosted {
 }
 
 /// The caller's rate-limit key: the IP from the configured header when set, else the socket's
-/// peer, else `unknown`; see [`limit_key`].
+/// peer, else `unknown`; see `limit_key`.
 pub struct ClientIp(pub String);
 
 /// An IPv4 address as is, an IPv6 address by its /64, the block one client is usually handed,

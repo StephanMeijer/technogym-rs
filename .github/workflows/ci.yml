@@ -66,6 +66,20 @@ jobs:
           components: rustfmt
       - run: cargo fmt --all -- --check
 
+  # Same gate as `just doc`: a public doc that links to a private item, or a broken
+  # intra-doc link, fails here before it reaches docs.rs.
+  doc:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2.9.2
+      - run: RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
+
   # A dependency a crate declares but never names: every crate here is published,
   # so an unused entry is compiled by every downstream consumer. Renovate bumps the
   # action SHA but cannot see `tool:`, so the cargo-machete version moves by hand.

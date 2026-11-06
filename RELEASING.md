@@ -87,4 +87,5 @@ grouped, with advisories and base-image digests unscheduled. `cargo deny check a
 on every PR and on weekday mornings; it gates nothing, it puts findings in front of someone.
 Pinned tool versions live in two places each and move by hand: cargo-deny and cargo-machete in
 `ci.yml`/`advisories.yml`, release-plz in `ci.yml` (its `pr_body` template is copied into
-`release-plz.toml`), cargo-dist in `Cargo.toml` and `release.yml`.
+`release-plz.toml`), cargo-dist in `Cargo.toml` and `release.yml`. gh (version and sha256
+together) lives only in `ci.yml`'s release-PR job.

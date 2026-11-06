@@ -271,6 +271,19 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
+      # release-plz/action calls `gh` to set the git author; the 9xx image has no gh and no sudo.
+      # Renovate cannot see this pin: bump GH_VERSION and GH_SHA256 together by hand.
+      - name: Install gh
+        env:
+          GH_VERSION: 2.102.1
+          GH_SHA256: 77b9e297e94c50336823d0f84de7ef1be60cba704601fa0d98f129f47a94987b
+        run: |
+          set -euo pipefail
+          dir="gh_${GH_VERSION}_linux_amd64"
+          curl -fsSL --retry 3 --proto '=https' -o "$RUNNER_TEMP/$dir.tar.gz" "https://github.com/cli/cli/releases/download/v${GH_VERSION}/$dir.tar.gz"
+          echo "${GH_SHA256}  $RUNNER_TEMP/$dir.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$dir.tar.gz" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/$dir/bin" >> "$GITHUB_PATH"
       - name: Run release-plz (release-pr)
         uses: release-plz/action@v0.5.148
         with:

@@ -157,6 +157,19 @@ async fn training_trends_count_each_session_once() {
 }
 
 #[tokio::test]
+async fn training_trends_default_to_the_twelve_weeks_up_to_today() {
+    let server = mywellness().await;
+    let h = harness(&server, Some(saved_session("tok-1")), None).await;
+    let today = technogym::dates::today();
+    let trends = parsed(&call(&h, "get_training_trends", json!({})).await);
+    assert_eq!(trends["toDate"], technogym::dates::to_iso(today));
+    assert_eq!(
+        trends["fromDate"],
+        technogym::dates::to_iso(technogym::dates::add_days(today, -83))
+    );
+}
+
+#[tokio::test]
 async fn every_tool_answers_over_a_saved_session() {
     let server = mywellness().await;
     let h = harness(&server, Some(saved_session("tok-1")), None).await;
@@ -336,6 +349,11 @@ async fn bad_arguments_are_error_results_not_protocol_errors() {
         (
             "get_workout_session",
             json!({ "session_id": "1001", "date": "yesterday" }),
+            "invalid date",
+        ),
+        (
+            "get_training_trends",
+            json!({ "from_date": "yesterday" }),
             "invalid date",
         ),
         (

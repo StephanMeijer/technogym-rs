@@ -168,7 +168,7 @@ impl TechnogymBuilder {
     }
 
     /// Sign in lazily on the first call and again whenever mywellness rejects the token.
-    /// Without them, call [`Technogym::login`] or [`Technogym::load_session`] first, and a
+    /// Credentials mywellness rejects are forgotten, so a wrong password is sent once. Without them, call [`Technogym::login`] or [`Technogym::load_session`] first, and a
     /// rejected token is an [`Error::Auth`].
     pub fn credentials(mut self, credentials: Credentials) -> Self {
         self.credentials = Some(credentials);
@@ -363,7 +363,15 @@ impl Technogym {
         let credentials = self
             .credentials()
             .ok_or_else(|| Error::Auth("no credentials to sign in with".into()))?;
-        let session = self.login_request(&credentials).await?;
+        let session = match self.login_request(&credentials).await {
+            Ok(session) => session,
+            Err(e @ Error::Auth(_)) => {
+                // A rejected password is never sent again; other failures may be transient.
+                self.state.lock().expect("state").credentials = None;
+                return Err(e);
+            }
+            Err(e) => return Err(e),
+        };
         self.set_session(session.clone());
         self.store.save(&session).await?;
         Ok(session)

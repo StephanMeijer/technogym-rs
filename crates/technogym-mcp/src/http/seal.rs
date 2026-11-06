@@ -129,6 +129,11 @@ impl Sealer {
         self
     }
 
+    /// The time expiries are measured against, in epoch seconds.
+    pub fn now(&self) -> u64 {
+        (self.clock)()
+    }
+
     /// Seals `data` for `purpose`, expiring after `ttl_seconds` when given.
     pub fn seal<T: Serialize>(
         &self,

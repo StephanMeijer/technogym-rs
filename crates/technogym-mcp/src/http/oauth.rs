@@ -546,8 +546,10 @@ fn exchange_code(h: &Hosted, client_id: &str, form: &HashMap<String, String>) ->
         );
     }
     // Last, so a failed attempt never burns a good code.
-    let exp = unsealed.exp.unwrap_or_else(|| now() + CODE_TTL_S);
-    if !h.used_codes.consume(code, exp, now()) {
+    // One clock for the expiry and the purge, so a test clock cannot let a replay through.
+    let now = h.sealer.now();
+    let exp = unsealed.exp.unwrap_or(now + CODE_TTL_S);
+    if !h.used_codes.consume(code, exp, now) {
         return oauth_error(
             StatusCode::BAD_REQUEST,
             "invalid_grant",

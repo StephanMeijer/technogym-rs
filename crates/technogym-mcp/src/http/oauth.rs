@@ -256,6 +256,11 @@ pub async fn authorize(
     };
     let state = get("state").map(str::to_string);
     let fail = |description: &str| {
+        // Anyone can register any redirect_uri, so an error redirect to an unknown host would
+        // make this server an open redirector (RFC 9700 §4.11): those get a page instead.
+        if !is_trusted_redirect(&redirect_uri) {
+            return page(StatusCode::BAD_REQUEST, None, error_page(description));
+        }
         let mut location = Url::parse(&redirect_uri).expect("validated at registration");
         location
             .query_pairs_mut()

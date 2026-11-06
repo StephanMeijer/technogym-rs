@@ -44,6 +44,9 @@ impl From<technogym::Error> for ToolError {
 
 type ToolResult = Result<CallToolResult, ToolError>;
 
+/// The default `get_training_trends` window: twelve whole weeks, both bounds inclusive.
+const TRENDS_DEFAULT_DAYS: i64 = 12 * 7 - 1;
+
 /// Truncation hints, per tool: what to change to get less back.
 const DATE_RANGE_HINT: &str = "narrow from_date/to_date";
 const ONE_SESSION_HINT: &str = "drop include_raw";
@@ -296,7 +299,11 @@ impl TechnogymMcp {
         Parameters(args): Parameters<TrainingTrendsArgs>,
     ) -> Result<CallToolResult, McpError> {
         self.run(|api| async move {
-            let (from, to) = date_range(args.from_date.as_ref(), args.to_date.as_ref(), 83)?;
+            let (from, to) = date_range(
+                args.from_date.as_ref(),
+                args.to_date.as_ref(),
+                TRENDS_DEFAULT_DAYS,
+            )?;
             let sessions = api.list_sessions(from, to, false).await?;
             let value = json!({
                 "fromDate": to_iso(from),

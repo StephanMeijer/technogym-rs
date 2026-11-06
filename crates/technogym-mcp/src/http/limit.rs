@@ -32,9 +32,12 @@ impl RateLimit {
         self.count(key, false) >= self.limit
     }
 
-    /// Counts one hit without judging it.
-    pub fn hit(&self, key: &str) {
-        self.count(key, true);
+    /// Takes back one hit, for a slot reserved with `allow` that should not count.
+    pub fn release(&self, key: &str) {
+        // shortcut: a release after a window reset frees a slot in the new window (worst case ~2× the limit for one window); tag slots with their window start if that matters.
+        if let Some(entry) = self.hits.lock().expect("limiter").get_mut(key) {
+            entry.1 = entry.1.saturating_sub(1);
+        }
     }
 
     fn count(&self, key: &str, add: bool) -> u32 {
@@ -66,8 +69,18 @@ mod tests {
         assert!(!limit.allow("a"));
         assert!(limit.allow("b"));
         assert!(!limit.exhausted("b"));
-        limit.hit("b");
+        assert!(limit.allow("b"));
         assert!(limit.exhausted("b"));
+        limit.release("b");
+        assert!(!limit.exhausted("b"));
+        limit.release("b");
+        limit.release("b");
+        limit.release("never seen");
+        assert!(
+            limit.allow("b") && limit.allow("b"),
+            "release saturates at zero"
+        );
+        assert!(!limit.allow("b"));
         let short = RateLimit::new(1, Duration::from_millis(1));
         assert!(short.allow("a"));
         std::thread::sleep(Duration::from_millis(2));

@@ -614,6 +614,68 @@ async fn untrusted_redirects_need_confirmation_before_mywellness_is_called() {
 }
 
 #[tokio::test]
+async fn junk_sign_in_posts_do_not_use_up_the_global_limit() {
+    let server = mywellness().await;
+    let app = app(&server);
+    let trusted = start_flow(&app, "https://claude.ai/cb", "none").await;
+    let untrusted = start_flow(&app, "https://evil.example/cb", "none").await;
+    for _ in 0..100 {
+        let (empty, _, _) = send(
+            &app,
+            post_form(
+                "/mcp/oauth/signin",
+                &[
+                    ("request", &trusted.request),
+                    ("email", "a@b.c"),
+                    ("password", ""),
+                ],
+            ),
+        )
+        .await;
+        assert_eq!(empty, StatusCode::BAD_REQUEST);
+        let (unconfirmed, _, _) = send(
+            &app,
+            post_form(
+                "/mcp/oauth/signin",
+                &[
+                    ("request", &untrusted.request),
+                    ("email", "a@b.c"),
+                    ("password", "right"),
+                ],
+            ),
+        )
+        .await;
+        assert_eq!(unconfirmed, StatusCode::BAD_REQUEST);
+    }
+    let (status, _, body) = send(
+        &app,
+        post_form(
+            "/mcp/oauth/signin",
+            &[
+                ("request", &trusted.request),
+                ("email", "a@b.c"),
+                ("password", "right"),
+            ],
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::SEE_OTHER,
+        "{}",
+        String::from_utf8_lossy(&body)
+    );
+    let logins = server
+        .received_requests()
+        .await
+        .unwrap()
+        .iter()
+        .filter(|r| r.url.path() == LOGIN)
+        .count();
+    assert_eq!(logins, 1, "only the real sign-in reached mywellness");
+}
+
+#[tokio::test]
 async fn failed_sign_ins_are_limited_per_ip() {
     let server = mywellness().await;
     let app = app(&server);
@@ -655,6 +717,48 @@ async fn failed_sign_ins_are_limited_per_ip() {
         .filter(|r| r.url.path() == LOGIN)
         .count();
     assert_eq!(logins, 5, "the sixth try never reached mywellness");
+}
+
+#[tokio::test]
+async fn concurrent_failed_sign_ins_cannot_pass_the_per_ip_limit() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(LOGIN))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(json!({ "errors": [{ "errorMessage": "Wrong password" }] }))
+                .set_delay(std::time::Duration::from_millis(300)),
+        )
+        .mount(&server)
+        .await;
+    let app = app(&server);
+    let flow = start_flow(&app, "https://claude.ai/cb", "none").await;
+    let mut posts = tokio::task::JoinSet::new();
+    for _ in 0..8 {
+        let (app, request) = (app.clone(), flow.request.clone());
+        posts.spawn(async move {
+            let form = [
+                ("request", request.as_str()),
+                ("email", "a@b.c"),
+                ("password", "wrong"),
+            ];
+            send(&app, post_form("/mcp/oauth/signin", &form)).await.0
+        });
+    }
+    let statuses = posts.join_all().await;
+    let refused = statuses
+        .iter()
+        .filter(|s| **s == StatusCode::TOO_MANY_REQUESTS)
+        .count();
+    let logins = server
+        .received_requests()
+        .await
+        .unwrap()
+        .iter()
+        .filter(|r| r.url.path() == LOGIN)
+        .count();
+    assert_eq!(logins, 5, "only five tries in flight per IP");
+    assert_eq!(refused, 3, "{statuses:?}");
 }
 
 /// A sealed refresh token for `client_id` whose mywellness session token is `token`.

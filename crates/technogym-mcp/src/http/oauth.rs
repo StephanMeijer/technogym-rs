@@ -361,12 +361,6 @@ pub async fn sign_in(
             "Too many sign-in attempts from your network. Wait 15 minutes and try again.",
         );
     }
-    if !h.limits.sign_in_global.allow("global") {
-        return retry(
-            StatusCode::TOO_MANY_REQUESTS,
-            "Too many people are signing in right now. Wait 15 minutes and try again.",
-        );
-    }
     if email.is_empty() || password.is_empty() {
         return retry(
             StatusCode::BAD_REQUEST,
@@ -385,12 +379,31 @@ pub async fn sign_in(
             ),
         );
     }
+    // The IP's slot is taken before the login, so concurrent tries cannot all slip past the
+    // check; it is given back unless mywellness rejects the password.
+    if !h.limits.sign_in_ip.allow(&ip) {
+        h.limits.sign_in_ip.release(&ip);
+        return retry(
+            StatusCode::TOO_MANY_REQUESTS,
+            "Too many sign-in attempts from your network. Wait 15 minutes and try again.",
+        );
+    }
+    // Counted only for attempts that reach mywellness, so junk posts cannot lock everyone out.
+    if !h.limits.sign_in_global.allow("global") {
+        h.limits.sign_in_ip.release(&ip);
+        return retry(
+            StatusCode::TOO_MANY_REQUESTS,
+            "Too many people are signing in right now. Wait 15 minutes and try again.",
+        );
+    }
     let started = std::time::Instant::now();
     // A fresh client per sign-in: the in-memory credentials `login()` keeps die with it.
     let session = match h.client().build().login(&email, &password).await {
-        Ok(session) => session,
+        Ok(session) => {
+            h.limits.sign_in_ip.release(&ip);
+            session
+        }
         Err(e) => {
-            h.limits.sign_in_ip.hit(&ip);
             tracing::info!(ok = false, ms = millis(started), "sign-in");
             return retry(StatusCode::BAD_REQUEST, &sign_in_error(&e));
         }

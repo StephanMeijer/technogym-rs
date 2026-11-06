@@ -34,6 +34,7 @@ impl RateLimit {
 
     /// Takes back one hit, for a slot reserved with `allow` that should not count.
     pub fn release(&self, key: &str) {
+        // shortcut: a release after a window reset frees a slot in the new window (worst case ~2× the limit for one window); tag slots with their window start if that matters.
         if let Some(entry) = self.hits.lock().expect("limiter").get_mut(key) {
             entry.1 = entry.1.saturating_sub(1);
         }

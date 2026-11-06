@@ -307,8 +307,10 @@ impl Technogym {
         self.state.lock().expect("state").session.clone()
     }
 
-    /// Forgets the session and the in-memory credentials, and clears the store.
+    /// Forgets the session and the in-memory credentials, and clears the store. Waits for a
+    /// sign-in in progress, then clears what it stored.
     pub async fn logout(&self) -> Result<()> {
+        let _guard = self.sign_in_lock.lock().await;
         {
             let mut state = self.state.lock().expect("state");
             state.session = None;

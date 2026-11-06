@@ -74,7 +74,7 @@ user's login come from here.
 Every user's mywellness traffic, logins included, leaves from one server IP. The client headers
 mimic Technogym's own web app, so a change on their side breaks sign-in for everyone at once.
 
-Codes are not single-use (no grant store): a code replayed within its 60 s lifetime mints a
-second token pair for the same client. A refresh token lives 24 hours from the last refresh, so a
-connector left idle must sign in again. Fine for a server you host for yourself and people you
-know; add a grant store before hosting for strangers.
+Codes are single-use, tracked in memory for the 60 s they live: a restart inside that window
+forgets which were used, and several replicas would each keep their own list. A refresh token
+lives 24 hours from the last refresh, so a connector left idle must sign in again. There is no
+per-connection revocation (see Operations); add a grant store before hosting for strangers.

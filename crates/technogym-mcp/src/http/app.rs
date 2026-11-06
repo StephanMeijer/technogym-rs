@@ -132,6 +132,8 @@ pub struct Hosted {
     pub limits: Limits,
     /// Stops in-flight MCP work on shutdown.
     pub cancel: CancellationToken,
+    /// Authorization codes already exchanged.
+    pub used_codes: oauth::UsedCodes,
     /// One connection pool for every mywellness call this process makes.
     http: reqwest::Client,
     base_urls: Option<BaseUrls>,
@@ -146,6 +148,7 @@ impl Hosted {
             sealer,
             limits: Limits::default(),
             cancel: CancellationToken::new(),
+            used_codes: oauth::UsedCodes::default(),
             http: reqwest::Client::new(),
             base_urls: None,
         }

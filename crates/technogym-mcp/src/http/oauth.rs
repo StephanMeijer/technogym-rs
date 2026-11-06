@@ -361,12 +361,6 @@ pub async fn sign_in(
             "Too many sign-in attempts from your network. Wait 15 minutes and try again.",
         );
     }
-    if !h.limits.sign_in_global.allow("global") {
-        return retry(
-            StatusCode::TOO_MANY_REQUESTS,
-            "Too many people are signing in right now. Wait 15 minutes and try again.",
-        );
-    }
     if email.is_empty() || password.is_empty() {
         return retry(
             StatusCode::BAD_REQUEST,
@@ -383,6 +377,13 @@ pub async fn sign_in(
                 "Tick the box to confirm you trust {} before signing in.",
                 redirect_target(&request.redirect_uri)
             ),
+        );
+    }
+    // Counted only for attempts that reach mywellness, so junk posts cannot lock everyone out.
+    if !h.limits.sign_in_global.allow("global") {
+        return retry(
+            StatusCode::TOO_MANY_REQUESTS,
+            "Too many people are signing in right now. Wait 15 minutes and try again.",
         );
     }
     let started = std::time::Instant::now();

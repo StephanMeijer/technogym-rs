@@ -614,6 +614,68 @@ async fn untrusted_redirects_need_confirmation_before_mywellness_is_called() {
 }
 
 #[tokio::test]
+async fn junk_sign_in_posts_do_not_use_up_the_global_limit() {
+    let server = mywellness().await;
+    let app = app(&server);
+    let trusted = start_flow(&app, "https://claude.ai/cb", "none").await;
+    let untrusted = start_flow(&app, "https://evil.example/cb", "none").await;
+    for _ in 0..100 {
+        let (empty, _, _) = send(
+            &app,
+            post_form(
+                "/mcp/oauth/signin",
+                &[
+                    ("request", &trusted.request),
+                    ("email", "a@b.c"),
+                    ("password", ""),
+                ],
+            ),
+        )
+        .await;
+        assert_eq!(empty, StatusCode::BAD_REQUEST);
+        let (unconfirmed, _, _) = send(
+            &app,
+            post_form(
+                "/mcp/oauth/signin",
+                &[
+                    ("request", &untrusted.request),
+                    ("email", "a@b.c"),
+                    ("password", "right"),
+                ],
+            ),
+        )
+        .await;
+        assert_eq!(unconfirmed, StatusCode::BAD_REQUEST);
+    }
+    let (status, _, body) = send(
+        &app,
+        post_form(
+            "/mcp/oauth/signin",
+            &[
+                ("request", &trusted.request),
+                ("email", "a@b.c"),
+                ("password", "right"),
+            ],
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::SEE_OTHER,
+        "{}",
+        String::from_utf8_lossy(&body)
+    );
+    let logins = server
+        .received_requests()
+        .await
+        .unwrap()
+        .iter()
+        .filter(|r| r.url.path() == LOGIN)
+        .count();
+    assert_eq!(logins, 1, "only the real sign-in reached mywellness");
+}
+
+#[tokio::test]
 async fn failed_sign_ins_are_limited_per_ip() {
     let server = mywellness().await;
     let app = app(&server);

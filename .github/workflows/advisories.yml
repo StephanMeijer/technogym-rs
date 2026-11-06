@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   advisories:
-    runs-on: ubuntu-latest
+    runs-on: 9xx
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7.0.1
@@ -23,4 +23,6 @@ jobs:
       - uses: taiki-e/install-action@v2.87.19
         with:
           tool: cargo-deny@0.20.2
+      # The 9xx runner ships rustup with no toolchain; cargo needs one.
+      - run: rustup default stable
       - run: cargo deny --locked check advisories

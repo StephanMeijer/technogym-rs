@@ -145,6 +145,92 @@ async fn a_failed_login_does_not_keep_the_credentials_for_renewal() {
     assert_eq!(logins, 1, "the rejected password is not tried again");
 }
 
+async fn mount_rejecting_login(server: &MockServer) {
+    Mock::given(path(LOGIN))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(json!({ "errors": [{ "errorMessage": "Wrong password" }] })),
+        )
+        .mount(server)
+        .await;
+}
+
+async fn login_count(server: &MockServer) -> usize {
+    server
+        .received_requests()
+        .await
+        .unwrap()
+        .iter()
+        .filter(|r| r.url.path() == LOGIN)
+        .count()
+}
+
+#[tokio::test]
+async fn a_rejected_lazy_sign_in_is_not_retried() {
+    let server = MockServer::start().await;
+    mount_rejecting_login(&server).await;
+    let tg = builder(&server)
+        .credentials(Credentials::new("a@b.c", "wrong"))
+        .build();
+    let first = tg.get_movergy().await.unwrap_err();
+    assert!(
+        matches!(&first, Error::Auth(m) if m.contains("Wrong password")),
+        "{first}"
+    );
+    let second = tg.get_movergy().await.unwrap_err();
+    assert!(
+        matches!(&second, Error::Auth(m) if m.contains("not signed in")),
+        "{second}"
+    );
+    assert_eq!(
+        login_count(&server).await,
+        1,
+        "the rejected password is not tried again"
+    );
+}
+
+#[tokio::test]
+async fn a_password_rejected_at_renewal_is_not_retried() {
+    let server = MockServer::start().await;
+    mount_rejecting_login(&server).await;
+    mount_movergy_rejecting_stale(&server).await;
+    let tg = builder(&server)
+        .credentials(Credentials::new("a@b.c", "changed"))
+        .build();
+    tg.set_session(session("stale"));
+    for _ in 0..2 {
+        let err = tg.get_movergy().await.unwrap_err();
+        assert!(matches!(err, Error::Auth(_)), "{err}");
+    }
+    assert_eq!(
+        login_count(&server).await,
+        1,
+        "the rejected password is not tried again"
+    );
+}
+
+#[tokio::test]
+async fn a_transient_lazy_sign_in_failure_keeps_the_credentials() {
+    let server = MockServer::start().await;
+    Mock::given(path(LOGIN))
+        .respond_with(ResponseTemplate::new(503))
+        .up_to_n_times(1)
+        .mount(&server)
+        .await;
+    mount_login(&server).await;
+    Mock::given(path(MOVERGY))
+        .respond_with(ok(&json!({ "movergy": 7 })))
+        .mount(&server)
+        .await;
+    let tg = builder(&server)
+        .credentials(Credentials::new("a@b.c", "pw"))
+        .build();
+    let err = tg.get_movergy().await.unwrap_err();
+    assert!(matches!(err, Error::Http { status: 503, .. }), "{err}");
+    assert_eq!(tg.get_movergy().await.unwrap(), Some(7.0));
+    assert_eq!(login_count(&server).await, 2);
+}
+
 #[tokio::test]
 async fn login_is_never_retried() {
     let server = MockServer::start().await;

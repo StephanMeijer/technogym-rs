@@ -753,6 +753,17 @@ async fn the_token_endpoint_rejects_every_bad_grant() {
             "server_error",
         ),
         (
+            "a client that never registered",
+            vec![
+                ("grant_type", "authorization_code"),
+                ("client_id", "not-a-client"),
+                ("code", &code),
+                ("code_verifier", &flow.verifier),
+            ],
+            StatusCode::UNAUTHORIZED,
+            "invalid_client",
+        ),
+        (
             "an unsupported grant type",
             vec![("grant_type", "password"), ("client_id", &flow.client_id)],
             StatusCode::BAD_REQUEST,
@@ -769,6 +780,20 @@ async fn the_token_endpoint_rejects_every_bad_grant() {
         );
     }
     // The same code and refresh token are still good for their own client.
+    let (status, _, body) = send(
+        &app,
+        post_form(
+            "/mcp/oauth/token",
+            &[
+                ("grant_type", "authorization_code"),
+                ("client_id", &flow.client_id),
+                ("code", &code),
+                ("code_verifier", &flow.verifier),
+            ],
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
     let (status, _, body) = send(
         &app,
         post_form(

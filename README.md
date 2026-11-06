@@ -17,7 +17,7 @@ login flow or its client-trust rules. Read-only: nothing here changes your accou
 | Crate | What | Docs |
 |---|---|---|
 | [`technogym`](crates/technogym) | Async client library: sign-in, session, endpoints, and the interval / lap analysis the API leaves out. | [README](crates/technogym/README.md) · [docs.rs](https://docs.rs/technogym) |
-| [`technogym-mcp`](crates/technogym-mcp) | MCP server with seven read-only tools: on stdio for Claude Code / Desktop, or hosted over HTTP with OAuth for claude.ai connectors. | [README](crates/technogym-mcp/README.md) · [HOSTING](crates/technogym-mcp/HOSTING.md) |
+| [`technogym-mcp`](crates/technogym-mcp) | MCP server with read-only tools: on stdio for Claude Code / Desktop, or hosted over HTTP with OAuth for claude.ai connectors. | [README](crates/technogym-mcp/README.md) · [HOSTING](crates/technogym-mcp/HOSTING.md) |
 
 ## Install
 

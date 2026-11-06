@@ -60,6 +60,17 @@ fn date(value: Option<&String>) -> Result<Option<NaiveDate>, ToolError> {
     }
 }
 
+/// `(from, to)` for a range tool: `to` defaults to today, `from` to `default_days` before `to`.
+fn date_range(
+    from: Option<&String>,
+    to: Option<&String>,
+    default_days: i64,
+) -> Result<(NaiveDate, NaiveDate), ToolError> {
+    let to = date(to)?.unwrap_or_else(today);
+    let from = date(from)?.unwrap_or_else(|| add_days(to, -default_days));
+    Ok((from, to))
+}
+
 fn required<'a>(value: Option<&'a String>, name: &str) -> Result<&'a str, ToolError> {
     value
         .map(String::as_str)
@@ -251,8 +262,7 @@ impl TechnogymMcp {
         Parameters(args): Parameters<WorkoutSessionsArgs>,
     ) -> Result<CallToolResult, McpError> {
         self.run(|api| async move {
-            let to = date(args.to_date.as_ref())?.unwrap_or_else(today);
-            let from = date(args.from_date.as_ref())?.unwrap_or_else(|| add_days(to, -30));
+            let (from, to) = date_range(args.from_date.as_ref(), args.to_date.as_ref(), 30)?;
             let sessions = api
                 .list_sessions(from, to, args.only_workouts.unwrap_or(true))
                 .await?;
@@ -286,8 +296,7 @@ impl TechnogymMcp {
         Parameters(args): Parameters<TrainingTrendsArgs>,
     ) -> Result<CallToolResult, McpError> {
         self.run(|api| async move {
-            let to = date(args.to_date.as_ref())?.unwrap_or_else(today);
-            let from = date(args.from_date.as_ref())?.unwrap_or_else(|| add_days(to, -83));
+            let (from, to) = date_range(args.from_date.as_ref(), args.to_date.as_ref(), 83)?;
             let sessions = api.list_sessions(from, to, false).await?;
             let value = json!({
                 "fromDate": to_iso(from),

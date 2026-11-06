@@ -7,7 +7,7 @@
     clippy::unused_async_trait_impl,
     reason = "rmcp's and axum's traits are async whether or not a method awaits"
 )]
-//! An MCP server over [`technogym`]: six read-only tools on stdio, or hosted over streamable
+//! An MCP server over [`technogym`]: read-only tools on stdio, or hosted over streamable
 //! HTTP behind a stateless OAuth 2.1 sign-in.
 
 pub mod config;

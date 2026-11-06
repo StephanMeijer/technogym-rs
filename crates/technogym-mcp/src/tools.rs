@@ -1,4 +1,4 @@
-//! The seven read-only tools.
+//! The read-only tools.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -184,7 +184,7 @@ pub struct SessionHeartRateArgs {
     pub sample_every_seconds: Option<i64>,
 }
 
-/// The MCP server: six read-only tools over one [`ApiSource`].
+/// The MCP server: the read-only tools over one [`ApiSource`].
 #[derive(Clone)]
 pub struct TechnogymMcp {
     source: Arc<dyn ApiSource>,

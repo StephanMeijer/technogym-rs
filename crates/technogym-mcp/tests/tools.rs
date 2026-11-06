@@ -1,4 +1,4 @@
-//! The six tools over a saved session, driven by a real MCP client across an in-memory pipe,
+//! The tools over a saved session, driven by a real MCP client across an in-memory pipe,
 //! against a mocked mywellness.
 
 use std::sync::Arc;

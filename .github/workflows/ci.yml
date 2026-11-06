@@ -71,7 +71,7 @@ jobs:
   # Same gate as `just doc`: a public doc that links to a private item, or a broken
   # intra-doc link, fails here before it reaches docs.rs.
   doc:
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || '9xx' }}
     permissions:
       contents: read
     steps:

@@ -1999,7 +1999,7 @@ dependencies = [
 
 [[package]]
 name = "technogym"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "async-trait",
  "chrono",
@@ -2015,7 +2015,7 @@ dependencies = [
 
 [[package]]
 name = "technogym-mcp"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "aes-gcm",
  "async-trait",

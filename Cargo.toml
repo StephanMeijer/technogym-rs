@@ -97,7 +97,3 @@ result_large_err = "allow"
 inherits = "release"
 lto = "thin"
 
-# x86_64 Linux artifacts build on our own 9xx runners; arm64 and macOS stay GitHub-hosted (9xx is amd64 Linux only).
-[workspace.metadata.dist.github-custom-runners]
-x86_64-unknown-linux-gnu = "9xx"
-x86_64-unknown-linux-musl = "9xx"

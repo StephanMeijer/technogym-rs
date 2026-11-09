@@ -16,9 +16,7 @@ jobs:
   # pedantic group moves between releases, so a second leg there reports churn.
   test:
     name: test (${{ matrix.toolchain }})
-    # Fork PRs stay on GitHub-hosted runners: the public repo auto-runs returning
-    # contributors' PRs, and cargo runs their build scripts. Push and same-repo PRs use 9xx.
-    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || '9xx' }}
+    runs-on: ubuntu-latest
     strategy:
       # "stable green, MSRV red" is a different diagnosis from "both red".
       fail-fast: false
@@ -27,7 +25,7 @@ jobs:
     permissions:
       contents: read
     env:
-      # Debuginfo pushed the build past the 9xx runner's 2 GiB memory limit and got the runner killed.
+      # Kept from the self-hosted 9xx runners, where debuginfo pushed the build past a 2 GiB memory limit.
       CARGO_PROFILE_DEV_DEBUG: 0
     steps:
       - uses: actions/checkout@v7.0.1
@@ -45,7 +43,7 @@ jobs:
       - run: cargo test --workspace --locked
 
   clippy:
-    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || '9xx' }}
+    runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
@@ -59,7 +57,7 @@ jobs:
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
   fmt:
-    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || '9xx' }}
+    runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
@@ -74,7 +72,7 @@ jobs:
   # Same gate as `just doc`: a public doc that links to a private item, or a broken
   # intra-doc link, fails here before it reaches docs.rs.
   doc:
-    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || '9xx' }}
+    runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
@@ -89,7 +87,7 @@ jobs:
   # so an unused entry is compiled by every downstream consumer. Renovate bumps the
   # action SHA but cannot see `tool:`, so the cargo-machete version moves by hand.
   machete:
-    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || '9xx' }}
+    runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
@@ -99,7 +97,7 @@ jobs:
       - uses: taiki-e/install-action@v2.87.19
         with:
           tool: cargo-machete@0.9.2
-      # The 9xx runner ships rustup with no toolchain; cargo needs one.
+      # Kept from the self-hosted 9xx runners, which shipped rustup with no default toolchain.
       - run: rustup default stable
       - run: cargo machete
 
@@ -107,7 +105,7 @@ jobs:
   # that only compiles because a sibling switched a shared feature on is a failure
   # nothing else catches.
   package:
-    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || '9xx' }}
+    runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
@@ -123,7 +121,7 @@ jobs:
   # advisory database cannot be pinned; the tool and the database's source are.
   # Keep the cargo-deny version in step with advisories.yml.
   advisories:
-    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || '9xx' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read
@@ -134,7 +132,7 @@ jobs:
       - uses: taiki-e/install-action@v2.87.19
         with:
           tool: cargo-deny@0.20.2
-      # The 9xx runner ships rustup with no toolchain; cargo needs one.
+      # Kept from the self-hosted 9xx runners, which shipped rustup with no default toolchain.
       - run: rustup default stable
       - run: cargo deny --locked check advisories
 
@@ -164,7 +162,7 @@ jobs:
       github.event_name == 'push'
       && github.ref == 'refs/heads/main'
       && github.repository == 'StephanMeijer/technogym-rs'
-    runs-on: 9xx
+    runs-on: ubuntu-latest
     environment: release
     permissions:
       contents: write
@@ -258,7 +256,7 @@ jobs:
       && github.ref == 'refs/heads/main'
       && github.repository == 'StephanMeijer/technogym-rs'
       && contains(fromJSON('["success", "failure"]'), needs.release-plz-release.result)
-    runs-on: 9xx
+    runs-on: ubuntu-latest
     permissions:
       contents: write
       pull-requests: write
@@ -271,7 +269,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
-      # release-plz/action calls `gh` to set the git author; the 9xx image has no gh and no sudo.
+      # release-plz/action calls `gh` to set the git author; kept from the self-hosted 9xx runners, which had no gh.
       # Renovate cannot see this pin: bump GH_VERSION and GH_SHA256 together by hand.
       - name: Install gh
         env:

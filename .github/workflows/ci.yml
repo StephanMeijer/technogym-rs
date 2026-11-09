@@ -164,7 +164,7 @@ jobs:
       github.event_name == 'push'
       && github.ref == 'refs/heads/main'
       && github.repository == 'StephanMeijer/technogym-rs'
-    runs-on: ubuntu-latest
+    runs-on: 9xx
     environment: release
     permissions:
       contents: write

@@ -43,7 +43,7 @@ jobs:
         include:
           - arch: amd64
             platform: linux/amd64
-            runner: ubuntu-latest
+            runner: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || '9xx' }}
           - arch: arm64
             platform: linux/arm64
             runner: ubuntu-24.04-arm
@@ -136,7 +136,7 @@ jobs:
     # Skipped (not failed) on push=false, which leaves the reusable workflow green.
     if: inputs.push
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || '9xx' }}
     timeout-minutes: 20
     permissions:
       contents: read

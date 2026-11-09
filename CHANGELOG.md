@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4](https://github.com/StephanMeijer/technogym-rs/compare/v0.1.3...v0.1.4) - 2026-11-09
+
+### Fixed
+
+- *(mcp)* make authorization codes single-use
+- *(mcp)* count only real sign-in attempts toward the global limit
+- *(technogym)* hold the sign-in lock while saving a rotated token
+- *(technogym)* let logout wait for an in-flight sign-in
+- *(technogym)* forget credentials mywellness rejects on lazy sign-in
+
+### Other
+
+- Merge pull request #43 from StephanMeijer/refactor/trends-window-const
+- Merge pull request #38 from StephanMeijer/test/token-endpoint-rejections
+- Merge pull request #42 from StephanMeijer/refactor/date-range-helper
+- Merge pull request #37 from StephanMeijer/fix/authorize-open-redirect
+- Merge pull request #36 from StephanMeijer/fix/doc-lint-ci
+- *(mcp)* drop the stale tool count from the crate docs
+- Merge pull request #47 from StephanMeijer/fix/forget-rejected-credentials
+- *(technogym)* cover the retry and error on a refused connection
+
 ## [0.1.3](https://github.com/StephanMeijer/technogym-rs/compare/v0.1.2...v0.1.3) - 2026-11-03
 
 ### Added

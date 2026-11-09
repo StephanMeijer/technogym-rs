@@ -512,6 +512,8 @@ impl Technogym {
         let Some(token) = token.filter(|t| !t.is_empty() && *t != session.token) else {
             return Ok(());
         };
+        // Held through the save, so a logout waits for it instead of being undone by it.
+        let _guard = self.sign_in_lock.lock().await;
         let updated = {
             let mut state = self.state.lock().expect("state");
             // A newer session may already have replaced this one.
